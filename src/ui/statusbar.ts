@@ -43,11 +43,13 @@ export function buildStatusbar(host: HTMLElement) {
     hint.classList.toggle('bad', ui.gesture !== 'none' && !ui.gestureValid);
     if (ui.gesture === 'place') hint.textContent = ui.gestureValid ? 'Relâchez pour déposer · Échap pour annuler' : 'Emplacement occupé · Échap pour annuler';
     else if (ui.gesture === 'move') hint.textContent = ui.gestureValid ? 'Relâchez pour placer · Échap pour annuler' : 'Position invalide (chevauchement)';
-    else if (store.selection.length) hint.textContent = `R pivoter · ${MOD}D dupliquer · ←↑→↓ déplacer · ⌫ supprimer`;
+    else if (ui.insertTool) hint.textContent = ui.toolHint ?? 'Habillage : cliquez dans une case d’un Kallax · Échap pour terminer';
+    else if (store.selection.length) hint.textContent = `R/X/Y pivoter · ${MOD}D ou ⌥glisser dupliquer · ←↑→↓ déplacer (⌥ fin) · ⌫ supprimer`;
     else hint.textContent = 'Glisser : orbiter · clic : sélectionner · F cadrer · ? raccourcis';
   };
   ui.on(e => {
     if (e === 'cursor') updCursor();
+    if (e === 'tool') updHint();
     if (e === 'snap' || e === 'gesture') { updSnap(); updHint(); }
   });
   store.on(e => {

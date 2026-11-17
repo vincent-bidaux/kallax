@@ -4,7 +4,8 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js';
-import { KALLAX, kallaxOuter, localSize } from '../core/kallax';
+import { KALLAX, kallaxOuter, localSize, validInserts } from '../core/kallax';
+import type { InsertType } from '../core/types';
 import type { Item, Size3 } from '../core/types';
 
 export interface CylinderInfo {
@@ -33,10 +34,14 @@ export interface ItemGeometry {
 const cache = new Map<string, ItemGeometry>();
 
 export function geometryKey(item: Item): string {
-  if (item.kind === 'kallax') return `k${item.cols}x${item.rows}${item.legs ? 'L' : ''}`;
+  if (item.kind === 'kallax') {
+    const ins = validInserts(item).map(([c, r, t]) => `${c}.${r}${t[0]}`).join('');
+    return `k${item.cols}x${item.rows}${item.legs ? 'L' : ''}${ins ? ':' + ins : ''}`;
+  }
   const s = item.size;
   if (item.shape === 'cylinder') return `c${item.axis ?? 'x'}${s.w}x${s.d}x${s.h}`;
   if (item.shape === 'wall') return `w${s.w}x${s.h}`;
+  if (item.shape === 'window') return `win${s.w}x${s.d}x${s.h}`;
   return `b${s.w}x${s.d}x${s.h}`;
 }
 
@@ -44,9 +49,10 @@ export function acquireGeometry(item: Item): ItemGeometry {
   const key = geometryKey(item);
   let g = cache.get(key);
   if (!g) {
-    g = item.kind === 'kallax' ? buildKallax(key, item.cols, item.rows, !!item.legs)
+    g = item.kind === 'kallax' ? buildKallax(key, item.cols, item.rows, !!item.legs, validInserts(item))
       : item.shape === 'cylinder' ? buildCylinder(key, localSize(item), item.axis ?? 'x')
       : item.shape === 'wall' ? buildWall(key, localSize(item))
+      : item.shape === 'window' ? buildWindow(key, localSize(item))
       : buildBlock(key, localSize(item));
     cache.set(key, g);
   }
@@ -97,6 +103,53 @@ function boxGeo(x0: number, y0: number, z0: number, x1: number, y1: number, z1: 
   const g = new THREE.BoxGeometry(x1 - x0, y1 - y0, z1 - z0);
   g.translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
   return g.toNonIndexed();
+}
+
+/**
+ * Cell fitting geometry inside the opening [x0,x1] × [z0,z1] (front at y = 0).
+ * door / drawers: fronts flush with the frame; basket: box set slightly back;
+ * shelf: horizontal plank at mid-height through the depth.
+ */
+function insertGeometry(t: InsertType, x0: number, z0: number, x1: number, z1: number, D: number) {
+  const g = 0.25;                 // reveal gap around fronts
+  const boxes: [number, number, number, number, number, number][] = [];
+  const edges: number[] = [];
+  const front = (a: number, b: number, c: number, d: number, y0: number, y1: number) => {
+    boxes.push([a, y0, b, c, y1, d]);
+    pushRect(edges, a, b, c, d, y0);
+  };
+  const cx = (x0 + x1) / 2;
+  if (t === 'door') {
+    front(x0 + g, z0 + g, x1 - g, z1 - g, 0.3, 2);
+    // knob on the right, mid-height (opening side)
+    const kx = x1 - 3.2, kz = (z0 + z1) / 2;
+    pushRect(edges, kx - 0.6, kz - 2.2, kx + 0.6, kz + 2.2, 0.15);
+  } else if (t === 'drawers') {
+    const zm = (z0 + z1) / 2;
+    for (const [a, b] of [[z0 + g, zm - g / 2], [zm + g / 2, z1 - g]] as const) {
+      front(x0 + g, a, x1 - g, b, 0.3, 2);
+      // finger-pull slot near the top edge
+      const sz = b - 3.4;
+      pushRect(edges, cx - 4.5, sz - 0.7, cx + 4.5, sz + 0.7, 0.15);
+    }
+  } else if (t === 'basket') {
+    const inset = 0.6, y0 = 1.2, top = z1 - 1.5;
+    boxes.push([x0 + inset, y0, z0 + 0.2, x1 - inset, Math.min(D - 0.5, y0 + 37), top]);
+    pushRect(edges, x0 + inset, z0 + 0.2, x1 - inset, top, y0);
+    pushSeg(edges, x0 + inset, y0, top, x0 + inset, y0 + 6, top);
+    pushSeg(edges, x1 - inset, y0, top, x1 - inset, y0 + 6, top);
+    // cut-out handle
+    const hz = top - 4.5;
+    pushRect(edges, cx - 5, hz - 1.4, cx + 5, hz + 1.4, y0 - 0.05);
+  } else {
+    const t2 = 0.8, zm = (z0 + z1) / 2;
+    boxes.push([x0, 1.5, zm - t2, x1, D - 1.5, zm + t2]);
+    pushRect(edges, x0, zm - t2, x1, zm + t2, 1.5);
+    pushSeg(edges, x0, 1.5, zm + t2, x0, D - 1.5, zm + t2);
+    pushSeg(edges, x1, 1.5, zm + t2, x1, D - 1.5, zm + t2);
+    pushRect(edges, x0, zm - t2, x1, zm + t2, D - 1.5);
+  }
+  return { faces: boxes.map(b => boxGeo(...b)), edges };
 }
 
 /**
@@ -152,7 +205,7 @@ export function kallaxCells(cols: number, rows: number): [number, number, number
   return cells;
 }
 
-function buildKallax(key: string, cols: number, rows: number, legs: boolean): ItemGeometry {
+function buildKallax(key: string, cols: number, rows: number, legs: boolean, inserts: [number, number, InsertType][] = []): ItemGeometry {
   const W = kallaxOuter(cols), H = kallaxOuter(rows), D = KALLAX.depth;
   const L = legs ? KALLAX.legs : 0;
   const cells = kallaxCells(cols, rows);
@@ -172,10 +225,22 @@ function buildKallax(key: string, cols: number, rows: number, legs: boolean): It
   face.translate(0, D, L);
   face.computeVertexNormals();
   let legEdges: number[] = [];
+  const extraFaces: THREE.BufferGeometry[] = [];
   if (legs) {
     const u = underframe(W, D, L);
     legEdges = u.edges;
-    const parts = [face.index ? face.toNonIndexed() : face, ...u.faces];
+    extraFaces.push(...u.faces);
+  }
+  for (const [c, r, t] of inserts) {
+    const i = c * rows + r; // kallaxCells order: column-major
+    const cell = cells[i];
+    if (!cell) continue;
+    const f = insertGeometry(t, cell[0], cell[1] + L, cell[2], cell[3] + L, D);
+    extraFaces.push(...f.faces);
+    legEdges.push(...f.edges);
+  }
+  if (extraFaces.length) {
+    const parts = [face.index ? face.toNonIndexed() : face, ...extraFaces];
     for (const p of parts) for (const name of Object.keys(p.attributes)) if (name !== 'position' && name !== 'normal') p.deleteAttribute(name);
     face = mergeGeometries(parts) ?? face;
   }
@@ -275,4 +340,46 @@ function buildWall(key: string, s: Size3): ItemGeometry {
   const outer: number[] = [];
   pushRect(outer, 0, 0, w, h, 0);
   return { key, size: { w, d: 0, h }, face, outer: lineGeo(outer), inner: null, all: lineGeo(outer, true), refs: 0 };
+}
+
+/**
+ * Window: frame (dormant + sashes, ~6 cm) with one or two glazed openings
+ * (2 casements from 70 cm wide), extruded through the frame depth. Glass is
+ * suggested by the classic pair of short diagonal reflection strokes.
+ */
+function buildWindow(key: string, s: Size3): ItemGeometry {
+  const w = Math.max(s.w, 20), d = Math.max(s.d, 1), h = Math.max(s.h, 20);
+  const f = Math.min(6, w / 6, h / 6);
+  const two = w >= 70;
+  const m = two ? Math.min(7, w / 10) : 0;
+  const panes: [number, number, number, number][] = two
+    ? [[f, f, (w - m) / 2, h - f], [(w + m) / 2, f, w - f, h - f]]
+    : [[f, f, w - f, h - f]];
+  const shape = new THREE.Shape();
+  shape.moveTo(0, 0); shape.lineTo(w, 0); shape.lineTo(w, h); shape.lineTo(0, h); shape.closePath();
+  for (const [x0, z0, x1, z1] of panes) {
+    const hole = new THREE.Path();
+    hole.moveTo(x0, z0); hole.lineTo(x0, z1); hole.lineTo(x1, z1); hole.lineTo(x1, z0); hole.closePath();
+    shape.holes.push(hole);
+  }
+  const face = new THREE.ExtrudeGeometry(shape, { depth: d, bevelEnabled: false, steps: 1, curveSegments: 1 });
+  face.rotateX(Math.PI / 2);
+  face.translate(0, d, 0);
+  face.computeVertexNormals();
+  face.computeBoundingSphere();
+
+  const outer: number[] = [];
+  pushTube(outer, 0, 0, w, h, d);
+  const inner: number[] = [];
+  const gy = d / 2; // glass plane
+  for (const [x0, z0, x1, z1] of panes) {
+    pushTube(inner, x0, z0, x1, z1, d);
+    // glazing: rebate line + reflection strokes
+    pushRect(inner, x0 + 1, z0 + 1, x1 - 1, z1 - 1, gy);
+    const pw = x1 - x0, ph = z1 - z0, k = Math.min(pw, ph);
+    const cx = x0 + pw * 0.3, cz = z0 + ph * 0.62;
+    pushSeg(inner, cx, gy, cz, cx + k * 0.18, gy, cz + k * 0.18);
+    pushSeg(inner, cx + k * 0.08, gy, cz - k * 0.06, cx + k * 0.3, gy, cz + k * 0.16);
+  }
+  return { key, size: { w, d, h }, face, outer: lineGeo(outer), inner: lineGeo(inner), all: lineGeo([...outer, ...inner], true), refs: 0 };
 }

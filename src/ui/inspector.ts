@@ -1,7 +1,7 @@
 // Right inspector: composition summary / single item / multi-selection.
 import { store } from '../core/store';
 import type { Item, KallaxItem, Rotation } from '../core/types';
-import { fmtCm, isOfficial, itemBox, kallaxNominal, unionBox, worldSize, boxesOverlap, MAX_CELLS, legsAvailable, KALLAX, cylinderDims, cylinderSize } from '../core/kallax';
+import { fmtCm, isOfficial, itemBox, kallaxNominal, unionBox, worldSize, boxesOverlap, MAX_CELLS, legsAvailable, KALLAX, cylinderDims, cylinderSize, isStructure, validInserts, INSERTS } from '../core/kallax';
 import { itemEuler, type Axis3 } from '../core/orient';
 import { h, clear, toast } from './dom';
 import { icon } from './icons';
@@ -54,6 +54,11 @@ function summaryPanel(): Panel {
       const key = `k:${k.cols}x${k.rows}`;
       const e = counts.get(key) ?? { n: 0, label: `Kallax ${k.cols}×${k.rows}`, sub: `${kallaxNominal(k.cols)}×${kallaxNominal(k.rows)}`, official: isOfficial(k.cols, k.rows) };
       e.n++; counts.set(key, e);
+      for (const [, , t] of validInserts(k)) {
+        const ik = `ins:${t}`;
+        const e2 = counts.get(ik) ?? { n: 0, label: INSERTS[t].product.replace(/ \d+×\d+(×\d+)?.*$/, ''), sub: INSERTS[t].product.match(/\d+×\d+(×\d+)?/)?.[0] ?? '33×33', official: true };
+        e2.n++; counts.set(ik, e2);
+      }
       if (k.legs) {
         const lk = `legs:${k.cols}`;
         const l = counts.get(lk) ?? { n: 0, label: 'Piètement KALLAX', sub: `${kallaxNominal(k.cols) - 1}×39×18`, official: true };
@@ -61,10 +66,10 @@ function summaryPanel(): Panel {
       }
     }
     const blocks = new Map<string, { n: number; label: string; sub: string }>();
-    for (const b of all) if (b.kind === 'block' && b.shape !== 'wall') {
+    for (const b of all) if (b.kind === 'block' && !isStructure(b)) {
       const key = `${b.shape ?? 'box'}|${b.name}|${b.size.w}|${b.size.d}|${b.size.h}`;
-      const cyl = b.shape === 'cylinder' ? cylinderDims(b) : null;
-      const e = blocks.get(key) ?? { n: 0, label: b.name, sub: cyl ? `Ø ${fmtCm(cyl.diameter)} × ${fmtCm(cyl.length)}` : dims3(b.size.w, b.size.d, b.size.h) };
+      const cyl = b.shape === 'cylinder' || b.shape === 'square' ? cylinderDims(b) : null;
+      const e = blocks.get(key) ?? { n: 0, label: b.name, sub: cyl ? `${b.shape === 'square' ? '□' : 'Ø'} ${fmtCm(cyl.diameter)} × ${fmtCm(cyl.length)}` : dims3(b.size.w, b.size.d, b.size.h) };
       e.n++; blocks.set(key, e);
     }
     const list = h('ul', { class: 'shop-list' });
@@ -114,7 +119,7 @@ function itemPanel(id: string): Panel {
 
   const nameField = textField({ value: it0.name, ariaLabel: 'Nom de l’objet', cls: 'hero-name', onCommit: v => store.patchItem(id, { name: v }) });
   const typeLabel = h('div', { class: 'hero-sub' });
-  const heroIcon = h('div', { class: 'hero-icon' }, icon(isK ? 'grid' : it0.shape === 'cylinder' ? 'cylinder' : it0.shape === 'wall' ? 'wall' : 'box', 22));
+  const heroIcon = h('div', { class: 'hero-icon' }, icon(isK ? 'grid' : shapeIcon(it0.shape), 22));
   const lockBanner = h('div', { class: 'banner', role: 'note' }, icon('lock', 13), 'Calque verrouillé — lecture seule');
   const overlapBanner = h('div', { class: 'banner warn', role: 'alert' }, icon('warning', 13), 'Chevauche un autre objet');
   const dimsHost = h('div');
@@ -168,7 +173,7 @@ function itemPanel(id: string): Panel {
       }),
     });
     sizeGroup = group('Cases', h('div', { class: 'steppers' }, colsSt.el, rowsSt.el), legsSw.el);
-  } else if (it0.shape === 'cylinder') {
+  } else if (it0.shape === 'cylinder' || it0.shape === 'square') {
     const patchCyl = (k: 'diameter' | 'length', v: number) => store.update(d => {
       const x = d.items.find(i => i.id === id);
       if (!x || x.kind !== 'block') return;
@@ -176,9 +181,10 @@ function itemPanel(id: string): Panel {
       x.size = cylinderSize(k === 'diameter' ? v : c.diameter, k === 'length' ? v : c.length, c.axis);
     });
     const c0 = cylinderDims(it0);
-    fw = numberField({ label: 'Ø', ariaLabel: 'Diamètre (cm)', value: c0.diameter, step: 0.5, min: 0.5, suffix: 'cm', onCommit: v => patchCyl('diameter', v) });
+    const sq = it0.shape === 'square';
+    fw = numberField({ label: sq ? '□' : 'Ø', ariaLabel: sq ? 'Côté (cm)' : 'Diamètre (cm)', value: c0.diameter, step: 0.5, min: 0.5, suffix: 'cm', onCommit: v => patchCyl('diameter', v) });
     fh = numberField({ label: 'L', ariaLabel: 'Longueur (cm)', value: c0.length, step: 1, min: 0.5, suffix: 'cm', onCommit: v => patchCyl('length', v) });
-    sizeGroup = group('Poutre ronde', h('div', { class: 'fields-2' }, fw.el, fh.el));
+    sizeGroup = group(sq ? 'Poutre carrée' : 'Poutre ronde', h('div', { class: 'fields-2' }, fw.el, fh.el));
   } else if (it0.shape === 'wall') {
     const patchSize = (k: 'w' | 'h', v: number) => store.update(d => {
       const x = d.items.find(i => i.id === id); if (x && x.kind === 'block') x.size = { ...x.size, [k]: v };
@@ -193,7 +199,7 @@ function itemPanel(id: string): Panel {
     fw = numberField({ label: 'L', axis: 'x', ariaLabel: 'Largeur (cm)', value: it0.size.w, step: 1, min: 0.5, suffix: 'cm', onCommit: v => patchSize('w', v) });
     fd = numberField({ label: 'P', axis: 'y', ariaLabel: 'Profondeur (cm)', value: it0.size.d, step: 1, min: 0.5, suffix: 'cm', onCommit: v => patchSize('d', v) });
     fh = numberField({ label: 'H', axis: 'z', ariaLabel: 'Hauteur (cm)', value: it0.size.h, step: 1, min: 0.5, suffix: 'cm', onCommit: v => patchSize('h', v) });
-    sizeGroup = group('Taille du bloc', h('div', { class: 'fields-3' }, fw.el, fd.el, fh.el));
+    sizeGroup = group(it0.shape === 'window' ? 'Fenêtre' : 'Taille du bloc', h('div', { class: 'fields-3' }, fw.el, fd.el, fh.el));
   }
 
   const layerSel = h('select', { class: 'popup', 'aria-label': 'Calque' });
@@ -235,10 +241,15 @@ function itemPanel(id: string): Panel {
       legsSw!.input.disabled = !can || locked;
       legsSw!.el.classList.toggle('disabled', !can);
       legsSw!.el.title = can ? '' : 'IKEA propose le piètement pour les cadres de 2 ou 4 cases de large';
-    } else if (it.shape === 'cylinder') {
+    } else if (it.shape === 'cylinder' || it.shape === 'square') {
       const c = cylinderDims(it);
-      typeLabel.textContent = `Poutre ronde · Ø ${fmtCm(c.diameter)} × ${fmtCm(c.length)} cm`;
+      typeLabel.textContent = it.shape === 'square'
+        ? `Poutre carrée · □ ${fmtCm(c.diameter)} × ${fmtCm(c.length)} cm`
+        : `Poutre ronde · Ø ${fmtCm(c.diameter)} × ${fmtCm(c.length)} cm`;
       fw!.set(c.diameter); fh!.set(c.length);
+    } else if (it.shape === 'window') {
+      typeLabel.textContent = 'Fenêtre · 2 vantaux';
+      fw!.set(it.size.w); fd!.set(it.size.d); fh!.set(it.size.h);
     } else if (it.shape === 'wall') {
       typeLabel.textContent = 'Mur · plan opaque';
       fw!.set(it.size.w); fh!.set(it.size.h);
@@ -355,3 +366,7 @@ export function buildInspector(host: HTMLElement) {
 }
 
 export type { Rotation };
+
+export function shapeIcon(shape: string | undefined): string {
+  return shape === 'cylinder' ? 'cylinder' : shape === 'square' ? 'beamSquare' : shape === 'wall' ? 'wall' : shape === 'window' ? 'window' : 'box';
+}

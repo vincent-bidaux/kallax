@@ -17,6 +17,7 @@ import { buildInspector } from './ui/inspector';
 import { buildStatusbar } from './ui/statusbar';
 import { buildViewportOverlays } from './ui/viewport-overlays';
 import { buildShortcutsSheet } from './ui/shortcuts';
+import { installInsertTool } from './interaction/inserts';
 import { buildProjectsSheet, saveProject, openProjectsSheet } from './ui/projects';
 import { openJSON } from './ui/file-io';
 import { seedIfFirstLaunch } from './ui/seed';
@@ -92,6 +93,7 @@ function boot() {
 
   installTooltips();
   installPopoverDismiss();
+  installInsertTool(viewport); // before select/move: its capture listener must run first
   installSelectMove(viewport);
   installKeyboard({ openShortcuts: () => sheet.open(), isModalOpen: () => sheet.isOpen() || !!document.querySelector('dialog[open]') });
 

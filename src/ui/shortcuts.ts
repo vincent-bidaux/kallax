@@ -17,6 +17,8 @@ const GROUPS: [string, [string, string[]][]][] = [
     ['Basculer autour de X / Y', ['X', 'Y']],
     ['Déplacer d’un pas de grille', ['←', '↑', '→', '↓']],
     ['Déplacer ×10', [SHIFT, '←↑→↓']],
+    ['Déplacement fin (0,5 cm)', ['⌥', '←↑→↓']],
+    ['Dupliquer en glissant', ['⌥', 'glisser']],
     ['Monter / descendre', ['Page↑', 'Page↓']],
     ['Sélection multiple', [`${SHIFT}clic`, `${MOD}clic`]],
   ]],

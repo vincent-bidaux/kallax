@@ -277,6 +277,11 @@ export class Viewport implements ViewportAPI {
     return this.raycastRay;
   }
 
+  pickRay(clientX: number, clientY: number): { origin: Vec3; direction: Vec3 } {
+    const r = this.rayAt(clientX, clientY);
+    return { origin: { x: r.origin.x, y: r.origin.y, z: r.origin.z }, direction: { x: r.direction.x, y: r.direction.y, z: r.direction.z } };
+  }
+
   pickItem(clientX: number, clientY: number): string | null {
     const ray = this.rayAt(clientX, clientY);
     let best: string | null = null, bestT = Infinity;

@@ -46,6 +46,8 @@ export interface ViewportAPI {
 
   // ── picking (clientX/Y = DOM event coordinates) ──
   pickItem(clientX: number, clientY: number): string | null;
+  /** Pointer ray in world space (origin + unit direction), correct for every projection. */
+  pickRay(clientX: number, clientY: number): { origin: Vec3; direction: Vec3 };
   raycastSurface(clientX: number, clientY: number, ignoreIds?: string[]): SurfaceHit | null;
   /** Intersect the pointer ray with the plane  normal·p = constant  (world). */
   rayToPlane(clientX: number, clientY: number, normal: Vec3, constant: number): Vec3 | null;

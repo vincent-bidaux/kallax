@@ -1,5 +1,7 @@
 // Library: KALLAX catalogue tiles (to-scale front elevations) + free block builder.
-import { CATALOG, IKEA_LINKS, KALLAX, fmtCm, kallaxOuter, cylinderSize, type CatalogEntry } from '../core/kallax';
+import { CATALOG, IKEA_LINKS, INSERTS, KALLAX, WINDOW_SILL, fmtCm, kallaxOuter, cylinderSize, type CatalogEntry } from '../core/kallax';
+import type { InsertType } from '../core/types';
+import type { InsertTool } from '../interaction/context';
 import { store, uid } from '../core/store';
 import type { BlockItem, Item, KallaxItem } from '../core/types';
 import { h, svg } from './dom';
@@ -57,6 +59,7 @@ function makeKallax(e: CatalogEntry): KallaxItem {
 
 function insertAtFreeSpot(it: Item) {
   it.position = freeSpot(it);
+  if (it.kind === 'block' && it.shape === 'window') it.position = { ...it.position, z: it.position.z + WINDOW_SILL };
   store.addItem(it);
   ui.viewport.zoomToFit(true);
 }
@@ -105,38 +108,93 @@ export function buildLibrary(host: HTMLElement) {
     grid,
     h('p', { class: 'hint' }, icon('cursor', 12), 'Glissez un format dans la vue, ou cliquez pour l’ajouter.'));
 
-  // ── BLOC LIBRE ──
-  const draft = { w: 80, d: 10, h: 60, name: 'Radiateur' };
-  const preview = h('div', { class: 'tile-art block-art' });
-  const previewDims = h('div', { class: 'tile-sub' });
-  const blockTile = h('div', {
-    class: 'lib-tile block-tile', role: 'button', tabindex: '0',
-    'aria-label': 'Bloc personnalisé : glisser dans la vue ou Entrée pour ajouter',
-  }, preview, h('div', { class: 'block-tile-text' }, h('div', { class: 'tile-label' }, 'Bloc personnalisé'), previewDims),
-    h('span', { class: 'block-grip', 'aria-hidden': 'true' }, icon('grip', 16)));
-  tip(blockTile, 'Glissez le bloc dans la vue');
-  const makeBlock = (): BlockItem => ({
-    id: uid(), kind: 'block', name: draft.name || 'Bloc', size: { w: draft.w, d: draft.d, h: draft.h },
-    position: { x: 0, y: 0, z: 0 }, rotation: 0, layerId: store.doc.activeLayerId,
+  // ── HABILLAGE (cell fittings tool) ──
+  const TOOLS: { id: InsertTool; label: string; icon: string; tip: string }[] = [
+    ...(Object.keys(INSERTS) as InsertType[]).map(k => ({ id: k as InsertTool, label: INSERTS[k].label, icon: INSERTS[k].icon, tip: INSERTS[k].product })),
+    { id: 'erase', label: 'Retirer', icon: 'eraser', tip: 'Retirer l’habillage d’une case' },
+  ];
+  const toolBtns = TOOLS.map(t => {
+    const el = h('button', { type: 'button', class: 'obj-type tool-btn', 'aria-pressed': 'false', 'aria-label': t.label }, icon(t.icon, 20), h('span', null, t.label));
+    tip(el, `${t.tip} — puis cliquez dans une case`);
+    el.addEventListener('click', () => ui.setInsertTool(ui.insertTool === t.id ? null : t.id));
+    return { el, t };
   });
-  blockTile.addEventListener('pointerdown', (ev) => beginLibraryDrag(ev, blockTile, makeBlock, draft.name || 'Bloc'));
-  blockTile.addEventListener('keydown', (ev) => {
-    if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); insertAtFreeSpot(makeBlock()); }
-  });
-
-  const refresh = () => {
-    preview.replaceChildren(boxIsoSVG(draft.w, draft.d, draft.h));
-    previewDims.textContent = `${fmtCm(draft.w)} × ${fmtCm(draft.d)} × ${fmtCm(draft.h)} cm`;
-    fw.set(draft.w); fd.set(draft.d); fh.set(draft.h); fname.set(draft.name);
-    chips.forEach(c => c.el.classList.toggle('on', c.p.name === draft.name && c.p.w === draft.w && c.p.d === draft.d && c.p.h === draft.h));
+  const toolHint = h('p', { class: 'hint tool-hint' }, icon('cursor', 12), 'Choisissez un habillage puis cliquez dans une case. Re-cliquez pour l’enlever.');
+  const syncTools = () => {
+    for (const b of toolBtns) { const on = ui.insertTool === b.t.id; b.el.classList.toggle('on', on); b.el.setAttribute('aria-pressed', String(on)); }
+    toolHint.classList.toggle('active', !!ui.insertTool);
+    toolHint.lastChild!.textContent = ui.insertTool ? 'Cliquez dans une case d’un Kallax · Échap pour terminer' : 'Choisissez un habillage puis cliquez dans une case. Re-cliquez pour l’enlever.';
   };
-  const fw = numberField({ label: 'L', ariaLabel: 'Largeur (cm)', value: draft.w, step: 1, min: 0.5, max: 2000, suffix: 'cm', onCommit: v => { draft.w = v; refresh(); } });
-  const fd = numberField({ label: 'P', ariaLabel: 'Profondeur (cm)', value: draft.d, step: 1, min: 0.5, max: 2000, suffix: 'cm', onCommit: v => { draft.d = v; refresh(); } });
-  const fh = numberField({ label: 'H', ariaLabel: 'Hauteur (cm)', value: draft.h, step: 1, min: 0.5, max: 2000, suffix: 'cm', onCommit: v => { draft.h = v; refresh(); } });
-  tip(fw.el, 'Largeur (X)'); tip(fd.el, 'Profondeur (Y)'); tip(fh.el, 'Hauteur (Z)');
-  const fname = textField({ label: 'Nom', value: draft.name, placeholder: 'Bloc', onCommit: v => { draft.name = v; refresh(); } });
+  ui.on(e => { if (e === 'tool') syncTools(); });
+  const insertSec = h('section', { class: 'panel-section' },
+    h('div', { class: 'section-head' }, h('h3', { class: 'section-title' }, 'HABILLAGE DES CASES')),
+    h('div', { class: 'obj-types', role: 'toolbar', 'aria-label': 'Habillage' }, toolBtns.map(b => b.el)),
+    toolHint,
+  );
 
-  const PRESETS = [
+  // ── OBJETS (bloc, poutres, mur, fenêtre) ──
+  type ObjType = 'box' | 'round' | 'square' | 'wall' | 'window';
+  const TYPES: { id: ObjType; label: string; icon: string; tip: string }[] = [
+    { id: 'box', label: 'Bloc', icon: 'box', tip: 'Bloc rectangulaire (radiateur, plinthe, lit…)' },
+    { id: 'round', label: 'Poutre ronde', icon: 'cylinder', tip: 'Poutre ou tube rond : Ø × longueur' },
+    { id: 'square', label: 'Poutre carrée', icon: 'beamSquare', tip: 'Poutre à section carrée : côté × longueur' },
+    { id: 'wall', label: 'Mur', icon: 'wall', tip: 'Plan opaque qui masque ce qui est derrière' },
+    { id: 'window', label: 'Fenêtre', icon: 'window', tip: 'Fenêtre 2 vantaux, posée à 90 cm (allège)' },
+  ];
+  const draft = {
+    type: 'box' as ObjType,
+    box: { w: 80, d: 10, h: 60, name: 'Radiateur' },
+    round: { diameter: 12, length: 200, axis: 'x' as 'x' | 'z', name: 'Poutre' },
+    square: { side: 10, length: 200, axis: 'x' as 'x' | 'z', name: 'Poutre carrée' },
+    wall: { w: 300, h: 250, name: 'Mur' },
+    window: { w: 120, h: 135, d: 7, name: 'Fenêtre' },
+  };
+
+  const typeBtns = TYPES.map(t => {
+    const el = h('button', { type: 'button', class: 'obj-type', role: 'radio', 'aria-label': t.label },
+      icon(t.icon, 20), h('span', null, t.label));
+    tip(el, t.tip);
+    el.addEventListener('click', () => { draft.type = t.id; render(); });
+    return { el, t };
+  });
+  const typeGrid = h('div', { class: 'obj-types', role: 'radiogroup', 'aria-label': 'Type d’objet' }, typeBtns.map(b => b.el));
+  const params = h('div', { class: 'obj-params' });
+  const preview = h('div', { class: 'tile-art block-art' });
+  const tileLabel = h('div', { class: 'tile-label' });
+  const tileDims = h('div', { class: 'tile-sub' });
+  const objTile = h('div', {
+    class: 'lib-tile block-tile', role: 'button', tabindex: '0',
+    'aria-label': 'Objet : glisser dans la vue ou Entrée pour ajouter',
+  }, preview, h('div', { class: 'block-tile-text' }, tileLabel, tileDims),
+    h('span', { class: 'block-grip', 'aria-hidden': 'true' }, icon('grip', 16)));
+  tip(objTile, 'Glissez l’objet dans la vue');
+
+  const makeObject = (): BlockItem => {
+    const base = { id: uid(), kind: 'block' as const, position: { x: 0, y: 0, z: 0 }, rotation: 0 as const, layerId: store.doc.activeLayerId };
+    switch (draft.type) {
+      case 'round': { const o = draft.round; return { ...base, shape: 'cylinder', axis: o.axis, name: o.name || 'Poutre', size: cylinderSize(o.diameter, o.length, o.axis) }; }
+      case 'square': { const o = draft.square; return { ...base, shape: 'square', axis: o.axis, name: o.name || 'Poutre carrée', size: cylinderSize(o.side, o.length, o.axis) }; }
+      case 'wall': { const o = draft.wall; return { ...base, shape: 'wall', name: o.name || 'Mur', size: { w: o.w, d: 0, h: o.h } }; }
+      case 'window': { const o = draft.window; return { ...base, shape: 'window', name: o.name || 'Fenêtre', size: { w: o.w, d: o.d, h: o.h } }; }
+      default: { const o = draft.box; return { ...base, name: o.name || 'Bloc', size: { w: o.w, d: o.d, h: o.h } }; }
+    }
+  };
+  objTile.addEventListener('pointerdown', (ev) => beginLibraryDrag(ev, objTile, makeObject, makeObject().name));
+  objTile.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); insertAtFreeSpot(makeObject()); }
+  });
+
+  const num = (label: string, aria: string, value: number, onCommit: (v: number) => void, o: { step?: number; min?: number; max?: number; axis?: 'x' | 'y' | 'z' } = {}) =>
+    numberField({ label, ariaLabel: aria, value, step: o.step ?? 1, min: o.min ?? 0.5, max: o.max ?? 5000, suffix: 'cm', axis: o.axis, onCommit: v => { onCommit(v); updateTile(); } }).el;
+  const nameF = (obj: { name: string }, ph: string) =>
+    textField({ label: 'Nom', value: obj.name, placeholder: ph, onCommit: v => { obj.name = v; updateTile(); } }).el;
+  const axisSeg = (obj: { axis: 'x' | 'z' }) => segmented<'x' | 'z'>({
+    ariaLabel: 'Orientation', size: 'sm', value: obj.axis,
+    options: [{ value: 'x', label: 'Horizontale' }, { value: 'z', label: 'Verticale' }],
+    onChange: v => { obj.axis = v; updateTile(); },
+  }).el;
+
+  const BOX_PRESETS = [
     { name: 'Radiateur', w: 80, d: 10, h: 60 },
     { name: 'Plinthe', w: 200, d: 1.5, h: 8 },
     { name: 'Prise', w: 8, d: 4, h: 8 },
@@ -144,19 +202,88 @@ export function buildLibrary(host: HTMLElement) {
     { name: 'Porte', w: 83, d: 4, h: 204 },
     { name: 'Lit 140', w: 140, d: 190, h: 45 },
   ];
-  const chips = PRESETS.map(p => {
-    const el = h('button', { type: 'button', class: 'chip' }, p.name);
-    tip(el, `${p.name} · ${fmtCm(p.w)} × ${fmtCm(p.d)} × ${fmtCm(p.h)} cm`);
-    el.addEventListener('click', () => { Object.assign(draft, p); refresh(); });
-    return { el, p };
-  });
+  const WINDOW_PRESETS = [
+    { name: '60 × 75', w: 60, h: 75 }, { name: '80 × 115', w: 80, h: 115 },
+    { name: '100 × 125', w: 100, h: 125 }, { name: '120 × 135', w: 120, h: 135 },
+    { name: 'Porte-fenêtre', w: 120, h: 215 },
+  ];
+
+  const renderParams = () => {
+    const t = draft.type;
+    const nodes: Node[] = [];
+    if (t === 'box') {
+      const o = draft.box;
+      nodes.push(h('div', { class: 'chips', role: 'group', 'aria-label': 'Préréglages' }, BOX_PRESETS.map(p => {
+        const el = h('button', { type: 'button', class: `chip${p.name === o.name && p.w === o.w && p.d === o.d && p.h === o.h ? ' on' : ''}` }, p.name);
+        tip(el, `${p.name} · ${fmtCm(p.w)} × ${fmtCm(p.d)} × ${fmtCm(p.h)} cm`);
+        el.addEventListener('click', () => { Object.assign(o, p); render(); });
+        return el;
+      })));
+      nodes.push(h('div', { class: 'fields-3' },
+        num('L', 'Largeur (cm)', o.w, v => o.w = v, { axis: 'x' }),
+        num('P', 'Profondeur (cm)', o.d, v => o.d = v, { axis: 'y' }),
+        num('H', 'Hauteur (cm)', o.h, v => o.h = v, { axis: 'z' })));
+      nodes.push(nameF(o, 'Bloc'));
+    } else if (t === 'round') {
+      const o = draft.round;
+      nodes.push(h('div', { class: 'fields-2' },
+        num('Ø', 'Diamètre (cm)', o.diameter, v => o.diameter = v, { step: 0.5 }),
+        num('L', 'Longueur (cm)', o.length, v => o.length = v)));
+      nodes.push(axisSeg(o), nameF(o, 'Poutre'));
+    } else if (t === 'square') {
+      const o = draft.square;
+      nodes.push(h('div', { class: 'fields-2' },
+        num('□', 'Côté de la section (cm)', o.side, v => o.side = v, { step: 0.5 }),
+        num('L', 'Longueur (cm)', o.length, v => o.length = v)));
+      nodes.push(axisSeg(o), nameF(o, 'Poutre carrée'));
+    } else if (t === 'wall') {
+      const o = draft.wall;
+      nodes.push(h('div', { class: 'fields-2' },
+        num('L', 'Largeur du mur (cm)', o.w, v => o.w = v, { min: 1, axis: 'x' }),
+        num('H', 'Hauteur du mur (cm)', o.h, v => o.h = v, { min: 1, axis: 'z' })));
+      nodes.push(nameF(o, 'Mur'));
+    } else {
+      const o = draft.window;
+      nodes.push(h('div', { class: 'chips', role: 'group', 'aria-label': 'Formats standard' }, WINDOW_PRESETS.map(p => {
+        const el = h('button', { type: 'button', class: `chip${p.w === o.w && p.h === o.h ? ' on' : ''}` }, p.name);
+        tip(el, `${fmtCm(p.w)} × ${fmtCm(p.h)} cm`);
+        el.addEventListener('click', () => { o.w = p.w; o.h = p.h; if (p.name === 'Porte-fenêtre') o.name = 'Porte-fenêtre'; else if (o.name === 'Porte-fenêtre') o.name = 'Fenêtre'; render(); });
+        return el;
+      })));
+      nodes.push(h('div', { class: 'fields-3' },
+        num('L', 'Largeur (cm)', o.w, v => o.w = v, { min: 20, axis: 'x' }),
+        num('P', 'Épaisseur du dormant (cm)', o.d, v => o.d = v, { min: 2, axis: 'y' }),
+        num('H', 'Hauteur (cm)', o.h, v => o.h = v, { min: 20, axis: 'z' })));
+      nodes.push(nameF(o, 'Fenêtre'));
+    }
+    params.replaceChildren(...nodes);
+  };
+
+  const updateTile = () => {
+    const t = draft.type;
+    const meta = TYPES.find(x => x.id === t)!;
+    tileLabel.textContent = meta.label;
+    let dims = '';
+    if (t === 'box') { const o = draft.box; dims = `${fmtCm(o.w)} × ${fmtCm(o.d)} × ${fmtCm(o.h)} cm`; preview.replaceChildren(boxIsoSVG(o.w, o.d, o.h)); }
+    else if (t === 'round') { const o = draft.round; dims = `Ø ${fmtCm(o.diameter)} × ${fmtCm(o.length)} cm · ${o.axis === 'x' ? 'horiz.' : 'vert.'}`; preview.replaceChildren(icon('cylinder', 40)); }
+    else if (t === 'square') { const o = draft.square; dims = `□ ${fmtCm(o.side)} × ${fmtCm(o.length)} cm · ${o.axis === 'x' ? 'horiz.' : 'vert.'}`; const s = cylinderSize(o.side, o.length, o.axis); preview.replaceChildren(boxIsoSVG(s.w, s.d, s.h)); }
+    else if (t === 'wall') { const o = draft.wall; dims = `${fmtCm(o.w)} × ${fmtCm(o.h)} cm`; preview.replaceChildren(icon('wall', 40)); }
+    else { const o = draft.window; dims = `${fmtCm(o.w)} × ${fmtCm(o.h)} cm · allège 90`; preview.replaceChildren(icon('window', 40)); }
+    tileDims.textContent = dims;
+    preview.classList.toggle('shape-art', t !== 'box' && t !== 'square');
+  };
+
+  const render = () => {
+    for (const b of typeBtns) { b.el.classList.toggle('on', b.t.id === draft.type); b.el.setAttribute('aria-checked', String(b.t.id === draft.type)); }
+    renderParams();
+    updateTile();
+  };
 
   const blockSec = h('section', { class: 'panel-section' },
-    h('div', { class: 'section-head' }, h('h3', { class: 'section-title' }, 'BLOC LIBRE')),
-    h('div', { class: 'chips', role: 'group', 'aria-label': 'Préréglages' }, chips.map(c => c.el)),
-    h('div', { class: 'fields-3' }, fw.el, fd.el, fh.el),
-    fname.el,
-    blockTile,
+    h('div', { class: 'section-head' }, h('h3', { class: 'section-title' }, 'OBJETS')),
+    typeGrid,
+    params,
+    objTile,
   );
 
   const refSec = h('section', { class: 'panel-section lib-refs' },
@@ -167,71 +294,6 @@ export function buildLibrary(host: HTMLElement) {
     h('p', { class: 'ref-note' },
       `Cotes réelles : 35 × n + 6,5 cm (41,5 · 76,5 · 111,5 · 146,5 · 181,5), profondeur 39. Piètement +${fmtCm(KALLAX.legs)} cm (vendu « 18 cm »).`),
   );
-  // ── POUTRE RONDE ──
-  const beam = { diameter: 12, length: 200, axis: 'x' as 'x' | 'z', name: 'Poutre' };
-  const beamDims = h('div', { class: 'tile-sub' });
-  const beamTile = h('div', {
-    class: 'lib-tile block-tile', role: 'button', tabindex: '0',
-    'aria-label': 'Poutre ronde : glisser dans la vue ou Entrée pour ajouter',
-  }, h('div', { class: 'tile-art block-art shape-art' }, icon('cylinder', 40)),
-    h('div', { class: 'block-tile-text' }, h('div', { class: 'tile-label' }, 'Poutre ronde'), beamDims),
-    h('span', { class: 'block-grip', 'aria-hidden': 'true' }, icon('grip', 16)));
-  tip(beamTile, 'Glissez la poutre dans la vue');
-  const makeBeam = (): BlockItem => ({
-    id: uid(), kind: 'block', shape: 'cylinder', axis: beam.axis, name: beam.name || 'Poutre',
-    size: cylinderSize(beam.diameter, beam.length, beam.axis),
-    position: { x: 0, y: 0, z: 0 }, rotation: 0, layerId: store.doc.activeLayerId,
-  });
-  beamTile.addEventListener('pointerdown', (ev) => beginLibraryDrag(ev, beamTile, makeBeam, beam.name || 'Poutre'));
-  beamTile.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); insertAtFreeSpot(makeBeam()); } });
-  const refreshBeam = () => { beamDims.textContent = `Ø ${fmtCm(beam.diameter)} × ${fmtCm(beam.length)} cm · ${beam.axis === 'x' ? 'horizontale' : 'verticale'}`; };
-  const fDia = numberField({ label: 'Ø', ariaLabel: 'Diamètre (cm)', value: beam.diameter, step: 0.5, min: 0.5, max: 500, suffix: 'cm', onCommit: v => { beam.diameter = v; refreshBeam(); } });
-  const fLen = numberField({ label: 'L', ariaLabel: 'Longueur (cm)', value: beam.length, step: 1, min: 1, max: 2000, suffix: 'cm', onCommit: v => { beam.length = v; refreshBeam(); } });
-  tip(fDia.el, 'Diamètre'); tip(fLen.el, 'Longueur');
-  const axisSeg = segmented<'x' | 'z'>({
-    ariaLabel: 'Orientation de la poutre', size: 'sm', value: beam.axis,
-    options: [{ value: 'x', label: 'Horizontale' }, { value: 'z', label: 'Verticale' }],
-    onChange: v => { beam.axis = v; refreshBeam(); },
-  });
-  const beamName = textField({ label: 'Nom', value: beam.name, placeholder: 'Poutre', onCommit: v => { beam.name = v; } });
-  const beamSec = h('section', { class: 'panel-section' },
-    h('div', { class: 'section-head' }, h('h3', { class: 'section-title' }, 'POUTRE RONDE')),
-    h('div', { class: 'fields-2' }, fDia.el, fLen.el),
-    axisSeg.el,
-    beamName.el,
-    beamTile,
-  );
-  refreshBeam();
-
-  // ── MUR ──
-  const wall = { w: 300, h: 250, name: 'Mur' };
-  const wallDims = h('div', { class: 'tile-sub' });
-  const wallTile = h('div', {
-    class: 'lib-tile block-tile', role: 'button', tabindex: '0',
-    'aria-label': 'Mur : glisser dans la vue ou Entrée pour ajouter',
-  }, h('div', { class: 'tile-art block-art shape-art' }, icon('wall', 40)),
-    h('div', { class: 'block-tile-text' }, h('div', { class: 'tile-label' }, 'Mur (plan)'), wallDims),
-    h('span', { class: 'block-grip', 'aria-hidden': 'true' }, icon('grip', 16)));
-  tip(wallTile, 'Plan opaque qui masque ce qui est derrière · X / Y / R pour pivoter');
-  const makeWall = (): BlockItem => ({
-    id: uid(), kind: 'block', shape: 'wall', name: wall.name || 'Mur',
-    size: { w: wall.w, d: 0, h: wall.h },
-    position: { x: 0, y: 0, z: 0 }, rotation: 0, layerId: store.doc.activeLayerId,
-  });
-  wallTile.addEventListener('pointerdown', (ev) => beginLibraryDrag(ev, wallTile, makeWall, wall.name || 'Mur'));
-  wallTile.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); insertAtFreeSpot(makeWall()); } });
-  const refreshWall = () => { wallDims.textContent = `${fmtCm(wall.w)} × ${fmtCm(wall.h)} cm`; };
-  const fWw = numberField({ label: 'L', ariaLabel: 'Largeur du mur (cm)', value: wall.w, step: 1, min: 1, max: 5000, suffix: 'cm', onCommit: v => { wall.w = v; refreshWall(); } });
-  const fWh = numberField({ label: 'H', ariaLabel: 'Hauteur du mur (cm)', value: wall.h, step: 1, min: 1, max: 2000, suffix: 'cm', onCommit: v => { wall.h = v; refreshWall(); } });
-  const wallName = textField({ label: 'Nom', value: wall.name, placeholder: 'Mur', onCommit: v => { wall.name = v; } });
-  const wallSec = h('section', { class: 'panel-section' },
-    h('div', { class: 'section-head' }, h('h3', { class: 'section-title' }, 'MUR')),
-    h('div', { class: 'fields-2' }, fWw.el, fWh.el),
-    wallName.el,
-    wallTile,
-  );
-  refreshWall();
-
-  host.append(kallaxSec, blockSec, beamSec, wallSec, refSec);
-  refresh();
+  host.append(kallaxSec, insertSec, blockSec, refSec);
+  render();
 }

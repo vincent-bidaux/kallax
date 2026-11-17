@@ -8,7 +8,9 @@ Concepteur de meubles à base d'étagères IKEA **KALLAX**, rendu « plan d'arch
 - Bibliothèque de Kallax (1×1 → 5×5, badge IKEA pour les formats vendus) à glisser sur la grille
 - Aimantation à la grille (1 / 5 / 10 / 35 cm) et aux faces des autres meubles, empilement X / Y / Z
 - Blocs libres (L × P × H en cm) pour simuler radiateur, plinthe, allège…
-- Poutre ronde (Ø × longueur) et mur (plan opaque qui masque l'arrière)
+- Module Objets : bloc, poutre ronde, poutre carrée, mur (plan opaque), fenêtre 2 vantaux (allège 90 cm)
+- Habillage des cases : porte, 2 tiroirs, panier, séparation horizontale (outil + clic dans une case)
+- ⌥ + glisser pour dupliquer, ⌥ + flèches pour un déplacement fin (0,5 cm)
 - Rotation par pas de 90° sur X, Y, Z pour tous les objets (touches X, Y, R ; ⇧ pour −90°)
 - Vues isométrique, cavalière (45°, rapport 1 ou 0,5 cabinet), rotation libre, retour d'un clic
 - ViewCube cliquable (faces, arêtes, coins), perspective / orthographique

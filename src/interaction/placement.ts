@@ -4,7 +4,7 @@
 //  3. magnetic snap to other items' faces (flush or aligned) — wins over grid
 //  4. validity: no AABB overlap with other visible items, z ≥ 0
 import type { Item, Vec3 } from '../core/types';
-import { boxesOverlap, itemBox, unionBox, worldSize, type Box3 } from '../core/kallax';
+import { boxesOverlap, itemBox, unionBox, worldSize, WINDOW_SILL, type Box3 } from '../core/kallax';
 import { store } from '../core/store';
 import { ui } from './context';
 
@@ -152,6 +152,9 @@ export function computePlacement(o: PlaceOpts): PlaceResult | null {
       }
     }
   }
+
+  // windows sit on a standard sill ("allège") unless stacked on something
+  if (item.kind === 'block' && item.shape === 'window' && surface !== 'top') pos.z += WINDOW_SILL;
 
   // ── reach guard: near the horizon (perspective / grazing views) the pointer ray
   // meets the floor hundreds of metres away. Refuse such positions instead of

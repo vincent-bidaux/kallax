@@ -7,6 +7,7 @@ import { store } from '../core/store';
 import { ui } from './context';
 import { computePlacement, boxesFree, boxAt } from './placement';
 import { toast } from '../ui/dom';
+import { uid } from '../core/store';
 
 interface MoveGesture {
   pid: number;
@@ -19,6 +20,8 @@ interface MoveGesture {
   valid: boolean;
   /** Collapse a multi-selection to the clicked item if no drag happens. */
   collapseTo: string | null;
+  /** ⌥-drag: move copies, leave the originals in place. */
+  duplicate: boolean;
 }
 
 let cancelMove: (() => boolean) | null = null;
@@ -40,7 +43,7 @@ export function installSelectMove(vp: ViewportAPI) {
   // ── pointerdown (capture) ──
   el.addEventListener('pointerdown', (e) => {
     if (e.target !== canvas()) return;
-    if (e.button !== 0 || e.altKey) return;
+    if (e.button !== 0) return;
     const id = vp.pickItem(e.clientX, e.clientY);
     const additive = e.shiftKey || e.metaKey || e.ctrlKey;
     if (!id) {
@@ -73,7 +76,7 @@ export function installSelectMove(vp: ViewportAPI) {
       pid: e.pointerId, x0: e.clientX, y0: e.clientY,
       primary: structuredClone(item), ids: canMove ? ids : [],
       orig: new Map(store.selectedItems().map(i => [i.id, { ...i.position }])),
-      grab, moving: false, valid: true, collapseTo,
+      grab, moving: false, valid: true, collapseTo, duplicate: e.altKey,
     };
     try { canvas().setPointerCapture(e.pointerId); } catch { /* ignore */ }
     window.addEventListener('pointermove', onGestureMove, true);
@@ -110,6 +113,24 @@ export function installSelectMove(vp: ViewportAPI) {
     vp.requestRender();
   };
 
+  /** ⌥-drag: clone the moved items in place (same undo step) and drag the clones. */
+  function startDuplicate() {
+    if (!g) return;
+    const map = new Map<string, string>();
+    for (const id of g.ids) map.set(id, uid());
+    store.preview(doc => {
+      const copies = doc.items.filter(i => map.has(i.id)).map(i => ({ ...structuredClone(i), id: map.get(i.id)!, name: i.name }));
+      doc.items.push(...copies);
+    });
+    const orig = new Map<string, Vec3>();
+    for (const [from, to] of map) { const o = g.orig.get(from); if (o) orig.set(to, o); }
+    g.orig = orig;
+    g.ids = [...map.values()];
+    g.primary = { ...g.primary, id: map.get(g.primary.id) ?? g.primary.id };
+    store.select(g.ids);
+    setCursor('copy');
+  }
+
   function onGestureMove(ev: PointerEvent) {
     if (!g || ev.pointerId !== g.pid) return;
     ev.stopPropagation();
@@ -117,9 +138,10 @@ export function installSelectMove(vp: ViewportAPI) {
       if (Math.hypot(ev.clientX - g.x0, ev.clientY - g.y0) <= 4 || !g.ids.length) return;
       g.moving = true;
       g.collapseTo = null;
+      if (g.duplicate) startDuplicate();
       store.setHover(null);
       document.body.classList.add('moving');
-      setCursor('grabbing');
+      setCursor(g.duplicate ? 'copy' : 'grabbing');
       ui.setGesture('move');
     }
     moveEv = ev;
@@ -134,7 +156,7 @@ export function installSelectMove(vp: ViewportAPI) {
       if (commit && g.valid) store.commit();
       else {
         store.cancelPreview();
-        if (commit && !g.valid) toast('Position invalide — déplacement annulé');
+        if (commit && !g.valid) toast(g.duplicate ? 'Position invalide — copie annulée' : 'Position invalide — déplacement annulé');
       }
     } else if (commit && g.collapseTo) {
       store.select([g.collapseTo]);
@@ -180,6 +202,7 @@ export function installSelectMove(vp: ViewportAPI) {
   // ── hover + cursor coordinates ──
   el.addEventListener('pointermove', (e) => {
     if (g || ui.gesture !== 'none') return;
+    if (ui.insertTool) { ui.setCursor(vp.rayToPlane(e.clientX, e.clientY, { x: 0, y: 0, z: 1 }, 0)); return; }
     if (e.target !== canvas()) { store.setHover(null); return; }
     hoverEv = e;
     if (hoverRaf) return;

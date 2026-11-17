@@ -2,9 +2,12 @@
 import { store } from '../core/store';
 import { isTyping, toast } from '../ui/dom';
 import * as cmd from './commands';
+import { ui } from './context';
 import { cancelActiveDrag } from './drag-drop';
 import { cancelActiveMove } from './select-move';
 import { closeAllPopovers } from '../ui/popover';
+
+const FINE_STEP = 0.5;
 
 export interface KeyboardHooks {
   openShortcuts(): void;
@@ -31,11 +34,14 @@ export function installKeyboard(hooks: KeyboardHooks) {
       if (kl === 'a') { handled(); cmd.selectAll(); return; }
       return;
     }
-    if (e.altKey) return;
+    if (e.altKey && !k.startsWith('Arrow') && !k.startsWith('Page')) return;
+    /** Nudge step: ⌥ = fine (0,5 cm), ⇧ = ×10 grid, else one grid cell. */
+    const nudgeStep = e.altKey ? FINE_STEP : grid * (e.shiftKey ? 10 : 1);
 
     switch (k) {
       case 'Escape':
         if (cancelActiveDrag() || cancelActiveMove()) { handled(); return; }
+        if (ui.insertTool) { handled(); ui.setInsertTool(null); return; }
         closeAllPopovers();
         if (store.selection.length) { handled(); store.select([]); }
         return;
@@ -46,7 +52,7 @@ export function installKeyboard(hooks: KeyboardHooks) {
       case 'ArrowLeft': case 'ArrowRight': case 'ArrowUp': case 'ArrowDown': {
         if (inWidget || !store.selection.length) return;
         handled();
-        const s = grid * (e.shiftKey ? 10 : 1);
+        const s = nudgeStep;
         if (k === 'ArrowLeft') cmd.nudge(-s, 0, 0);
         if (k === 'ArrowRight') cmd.nudge(s, 0, 0);
         if (k === 'ArrowUp') cmd.nudge(0, s, 0);
@@ -56,7 +62,7 @@ export function installKeyboard(hooks: KeyboardHooks) {
       case 'PageUp': case 'PageDown': {
         if (!store.selection.length) return;
         handled();
-        const s = grid * (e.shiftKey ? 10 : 1);
+        const s = nudgeStep;
         cmd.nudge(0, 0, k === 'PageUp' ? s : -s);
         return;
       }

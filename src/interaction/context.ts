@@ -3,7 +3,10 @@
 import type { ViewportAPI } from '../core/contracts';
 import type { Vec3 } from '../core/types';
 
-type UIEvent = 'cursor' | 'snap' | 'gesture' | 'layout';
+import type { InsertType } from '../core/types';
+
+type UIEvent = 'cursor' | 'snap' | 'gesture' | 'layout' | 'tool';
+export type InsertTool = InsertType | 'erase';
 
 class UIState {
   viewport!: ViewportAPI;
@@ -15,11 +18,17 @@ class UIState {
   gesture: 'none' | 'place' | 'move' = 'none';
   /** Placement validity during a gesture. */
   gestureValid = true;
+  /** Active "habillage" tool: click a Kallax cell to fit it. */
+  insertTool: InsertTool | null = null;
+  /** Hovered cell label while a tool is active. */
+  toolHint: string | null = null;
   private ls = new Set<(e: UIEvent) => void>();
 
   on(fn: (e: UIEvent) => void) { this.ls.add(fn); return () => this.ls.delete(fn); }
   emit(e: UIEvent) { for (const l of this.ls) l(e); }
 
+  setInsertTool(t: InsertTool | null) { if (t !== this.insertTool) { this.insertTool = t; this.toolHint = null; this.emit('tool'); } }
+  setToolHint(h: string | null) { if (h !== this.toolHint) { this.toolHint = h; this.emit('tool'); } }
   setCursor(p: Vec3 | null) { this.cursor = p; this.emit('cursor'); }
   setSnap(s: string | null) { if (s !== this.snap) { this.snap = s; this.emit('snap'); } }
   setGesture(g: UIState['gesture'], valid = true) {

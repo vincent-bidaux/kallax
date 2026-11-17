@@ -32,7 +32,12 @@ export interface KallaxItem extends ItemBase {
   rows: number;
   /** KALLAX underframe ("piètement" / "support"): raises the unit by KALLAX.legs. */
   legs?: boolean;
+  /** Cell fittings, keyed "col,row" (col from the left, row from the bottom, as seen from the front). */
+  inserts?: Record<string, InsertType>;
 }
+
+/** KALLAX cell fittings ("habillage"). */
+export type InsertType = 'door' | 'drawers' | 'basket' | 'shelf';
 
 /** Free rectangular block to simulate custom objects (radiator, window sill, bed…). */
 export interface BlockItem extends ItemBase {
@@ -42,9 +47,11 @@ export interface BlockItem extends ItemBase {
   /**
    * 'cylinder' = round beam ("poutre ronde"). Its axis is local X when
    * `axis === 'x'` (size = length × Ø × Ø) or Z when `axis === 'z'` (Ø × Ø × length).
+   * 'square' = square-section beam (same size convention as the cylinder, side = Ø).
    * 'wall' = opaque plane (no thickness: size.d = 0) that masks what is behind it.
+   * 'window' = 2-casement window: frame w × d × h, glazed openings.
    */
-  shape?: 'box' | 'cylinder' | 'wall';
+  shape?: 'box' | 'cylinder' | 'square' | 'wall' | 'window';
   axis?: 'x' | 'z';
 }
 

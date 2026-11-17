@@ -137,6 +137,7 @@ export function isCylinder(it: Item): it is import('./types').BlockItem & { shap
   return it.kind === 'block' && it.shape === 'cylinder';
 }
 /** Diameter / length of a cylinder block. */
+/** Ø (cylinder) or side (square beam), length and axis of a beam block. */
 export function cylinderDims(it: import('./types').BlockItem): { diameter: number; length: number; axis: 'x' | 'z' } {
   const axis = it.axis ?? 'x';
   return axis === 'x' ? { diameter: it.size.h, length: it.size.w, axis } : { diameter: it.size.w, length: it.size.h, axis };
@@ -147,4 +148,28 @@ export function cylinderSize(diameter: number, length: number, axis: 'x' | 'z'):
 
 export function isWall(it: Item): boolean {
   return it.kind === 'block' && it.shape === 'wall';
+}
+/** Structure of the room (walls, windows): not furniture, not in the shopping list. */
+export function isStructure(it: Item): boolean {
+  return it.kind === 'block' && (it.shape === 'wall' || it.shape === 'window');
+}
+/** Standard window sill height ("allège"). */
+export const WINDOW_SILL = 90;
+
+// ── cell fittings ("habillage") ───────────────────────────────
+import type { InsertType } from './types';
+export const INSERTS: Record<InsertType, { label: string; product: string; icon: string }> = {
+  door: { label: 'Porte', product: 'KALLAX bloc porte 33×33', icon: 'insertDoor' },
+  drawers: { label: '2 tiroirs', product: 'KALLAX bloc 2 tiroirs 33×33', icon: 'insertDrawers' },
+  basket: { label: 'Panier', product: 'Boîte / panier 33×38×33 (DRÖNA…)', icon: 'insertBasket' },
+  shelf: { label: 'Séparation', product: 'KALLAX insert 1 étagère 33×33', icon: 'insertShelf' },
+};
+/** Valid fittings of a unit (ignores cells outside the current cols × rows). */
+export function validInserts(it: KallaxItem): [number, number, InsertType][] {
+  const out: [number, number, InsertType][] = [];
+  for (const [k, t] of Object.entries(it.inserts ?? {})) {
+    const [c, r] = k.split(',').map(Number);
+    if (c >= 0 && r >= 0 && c < it.cols && r < it.rows && INSERTS[t]) out.push([c, r, t]);
+  }
+  return out.sort((a, b) => a[1] - b[1] || a[0] - b[0]);
 }
