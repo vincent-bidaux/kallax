@@ -1,5 +1,5 @@
 // Library: KALLAX catalogue tiles (to-scale front elevations) + free block builder.
-import { CATALOG, KALLAX, fmtCm, kallaxOuter, type CatalogEntry } from '../core/kallax';
+import { CATALOG, IKEA_LINKS, KALLAX, fmtCm, kallaxOuter, type CatalogEntry } from '../core/kallax';
 import { store, uid } from '../core/store';
 import type { BlockItem, Item, KallaxItem } from '../core/types';
 import { h, svg } from './dom';
@@ -159,6 +159,14 @@ export function buildLibrary(host: HTMLElement) {
     blockTile,
   );
 
-  host.append(kallaxSec, blockSec);
+  const refSec = h('section', { class: 'panel-section lib-refs' },
+    h('div', { class: 'section-head' }, h('h3', { class: 'section-title' }, 'RÉFÉRENCES IKEA')),
+    h('ul', { class: 'ref-list' }, IKEA_LINKS.map(l =>
+      h('li', null, h('a', { href: l.url, target: '_blank', rel: 'noopener noreferrer', class: 'ref-link' },
+        icon('arrowUpRight', 13), h('span', null, l.label))))),
+    h('p', { class: 'ref-note' },
+      `Cotes réelles : 35 × n + 6,5 cm (41,5 · 76,5 · 111,5 · 146,5 · 181,5), profondeur 39. Piètement +${fmtCm(KALLAX.legs)} cm (vendu « 18 cm »).`),
+  );
+  host.append(kallaxSec, blockSec, refSec);
   refresh();
 }

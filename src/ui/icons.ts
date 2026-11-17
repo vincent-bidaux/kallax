@@ -41,6 +41,7 @@ const P: Record<string, string> = {
   alignBottom: '<path d="M3.5 19.5h17"/><rect x="6" y="5.5" width="4.5" height="11" rx="1.2"/><rect x="13.5" y="9.5" width="4.5" height="7" rx="1.2"/>',
   alignFront: '<path d="M3.5 19.5 8 15h12.5"/><path d="M8 15V4.5" opacity=".5"/><rect x="6" y="9" width="6" height="6" rx="1.2" transform="skewX(-20)" /><path d="m13 15 3.5-3.5"/>',
   arrowRight: '<path d="M4.5 12h15M14 6.5l5.5 5.5-5.5 5.5"/>',
+  arrowUpRight: '<path d="M7 17 17 7M8.5 7H17v8.5"/>',
   arrowUp: '<path d="M12 19.5v-15M6.5 10 12 4.5l5.5 5.5"/>',
   arrowBack: '<path d="M6 18 18 6M10 6h8v8"/>',
   check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',

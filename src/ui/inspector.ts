@@ -1,10 +1,10 @@
 // Right inspector: composition summary / single item / multi-selection.
 import { store } from '../core/store';
 import type { Item, KallaxItem, Rotation } from '../core/types';
-import { fmtCm, isOfficial, itemBox, kallaxNominal, unionBox, worldSize, boxesOverlap, MAX_CELLS } from '../core/kallax';
+import { fmtCm, isOfficial, itemBox, kallaxNominal, unionBox, worldSize, boxesOverlap, MAX_CELLS, legsAvailable, KALLAX } from '../core/kallax';
 import { h, clear, toast } from './dom';
 import { icon } from './icons';
-import { button, numberField, stepper, textField, tip, type NumberField } from './controls';
+import { button, numberField, stepper, switchRow, textField, tip, type NumberField } from './controls';
 import * as cmd from '../interaction/commands';
 import { MOD } from './dom';
 
@@ -53,6 +53,11 @@ function summaryPanel(): Panel {
       const key = `k:${k.cols}x${k.rows}`;
       const e = counts.get(key) ?? { n: 0, label: `Kallax ${k.cols}×${k.rows}`, sub: `${kallaxNominal(k.cols)}×${kallaxNominal(k.rows)}`, official: isOfficial(k.cols, k.rows) };
       e.n++; counts.set(key, e);
+      if (k.legs) {
+        const lk = `legs:${k.cols}`;
+        const l = counts.get(lk) ?? { n: 0, label: 'Piètement KALLAX', sub: `${kallaxNominal(k.cols) - 1}×39×18`, official: true };
+        l.n++; counts.set(lk, l);
+      }
     }
     const blocks = new Map<string, { n: number; label: string; sub: string }>();
     for (const b of all) if (b.kind === 'block') {
@@ -128,6 +133,7 @@ function itemPanel(id: string): Panel {
     cmd.rotateSelection(d);
   }
 
+  let legsSw: ReturnType<typeof switchRow> | null = null;
   let colsSt: ReturnType<typeof stepper> | null = null;
   let rowsSt: ReturnType<typeof stepper> | null = null;
   let fw: NumberField | null = null, fd: NumberField | null = null, fh: NumberField | null = null;
@@ -135,7 +141,27 @@ function itemPanel(id: string): Panel {
   if (it0.kind === 'kallax') {
     colsSt = stepper({ label: 'Colonnes', value: it0.cols, min: 1, max: MAX_CELLS, onChange: v => store.update(d => { const x = d.items.find(i => i.id === id); if (x && x.kind === 'kallax') { x.name = renameKallax(x, x.cols, x.rows, v, x.rows); x.cols = v; } }) });
     rowsSt = stepper({ label: 'Lignes', value: it0.rows, min: 1, max: MAX_CELLS, onChange: v => store.update(d => { const x = d.items.find(i => i.id === id); if (x && x.kind === 'kallax') { x.name = renameKallax(x, x.cols, x.rows, x.cols, v); x.rows = v; } }) });
-    sizeGroup = group('Cases', h('div', { class: 'steppers' }, colsSt.el, rowsSt.el));
+    legsSw = switchRow({
+      label: 'Piètement', hint: `+${fmtCm(KALLAX.legs)} cm · cadre 77 ou 147 de large`, icon: 'arrowUp', value: !!it0.legs,
+      onChange: v => store.update(d => {
+        const x = d.items.find(i => i.id === id);
+        if (!x || x.kind !== 'kallax' || !!x.legs === v) return;
+        // lift (or lower) everything stacked on top of this unit, transitively
+        const dz = v ? KALLAX.legs : -KALLAX.legs;
+        const top = itemBox(x).max.z;
+        const moved = [itemBox(x)];
+        const xyOverlap = (a: ReturnType<typeof itemBox>, b: ReturnType<typeof itemBox>) =>
+          a.min.x < b.max.x - 0.01 && a.max.x > b.min.x + 0.01 && a.min.y < b.max.y - 0.01 && a.max.y > b.min.y + 0.01;
+        const above = d.items.filter(o => o.id !== x.id && itemBox(o).min.z >= top - 0.01).sort((a, b) => a.position.z - b.position.z);
+        for (const o of above) {
+          const ob = itemBox(o);
+          if (moved.some(m => xyOverlap(m, ob))) { moved.push(ob); o.position = { ...o.position, z: o.position.z + dz }; }
+        }
+        x.legs = v;
+        x.name = x.name.replace(/ \+ piètement$/, '') + (v && /^Kallax \d×\d/.test(x.name) ? ' + piètement' : '');
+      }),
+    });
+    sizeGroup = group('Cases', h('div', { class: 'steppers' }, colsSt.el, rowsSt.el), legsSw.el);
   } else {
     const patchSize = (k: 'w' | 'd' | 'h', v: number) => store.update(d => {
       const x = d.items.find(i => i.id === id); if (x && x.kind === 'block') x.size = { ...x.size, [k]: v };
@@ -180,6 +206,11 @@ function itemPanel(id: string): Panel {
       typeLabel.replaceChildren(`Kallax ${it.cols}×${it.rows} · ${kallaxNominal(it.cols)}×${kallaxNominal(it.rows)} cm `,
         h('span', { class: `pill ${off ? 'pill-ikea' : 'pill-custom'}` }, off ? 'IKEA' : 'Sur mesure'));
       colsSt!.set(it.cols); rowsSt!.set(it.rows);
+      const can = legsAvailable(it.cols) || !!it.legs;
+      legsSw!.set(!!it.legs);
+      legsSw!.input.disabled = !can || locked;
+      legsSw!.el.classList.toggle('disabled', !can);
+      legsSw!.el.title = can ? '' : 'IKEA propose le piètement pour les cadres de 2 ou 4 cases de large';
     } else {
       typeLabel.textContent = 'Bloc libre';
       fw!.set(it.size.w); fd!.set(it.size.d); fh!.set(it.size.h);

@@ -18,7 +18,20 @@ export const KALLAX = {
   divider: 1.5,
   cell: 33.5,
   pitch: 35,
+  /** Underframe height: 147×164 "avec support" = 146.5 + 17.5 (sold as an 18 cm underframe). */
+  legs: 17.5,
 } as const;
+
+/** IKEA sells the underframe for 2-wide (77) and 4-wide (147) frames. */
+export function legsAvailable(cols: number): boolean {
+  return cols === 2 || cols === 4;
+}
+
+/** IKEA reference pages. */
+export const IKEA_LINKS = [
+  { label: 'Série KALLAX — par nombre de cases', url: 'https://www.ikea.com/fr/fr/cat/kallax-serie-27534/' },
+  { label: 'Étagères KALLAX — par format', url: 'https://www.ikea.com/fr/fr/cat/etageres-kallax-58285/' },
+];
 
 export const MAX_CELLS = 5;
 
@@ -32,13 +45,14 @@ export function kallaxNominal(n: number): number {
 }
 
 /**
- * Frames sold by IKEA (cols × rows), per the IKEA FR "Sélectionnez la dimension
- * de votre KALLAX" range: 1, 2, 4 (1×4), 4 (2×2), 8, 12, 16 and 25 cells — each
- * usable upright or lying down. Other combinations are "sur mesure".
+ * Frames sold by IKEA (either orientation): 5 → only 5×5; 4 → 4×4, 4×3, 4×2, 4×1;
+ * up to 3 → every combination except the 3-cell 3×1 / 1×3. Others are "sur mesure".
  */
-const OFFICIAL = new Set(['1x1', '1x2', '2x1', '1x4', '4x1', '2x2', '2x4', '4x2', '3x4', '4x3', '4x4', '5x5']);
 export function isOfficial(cols: number, rows: number): boolean {
-  return OFFICIAL.has(`${cols}x${rows}`);
+  const a = Math.max(cols, rows), b = Math.min(cols, rows);
+  if (a === 5) return b === 5;
+  if (a === 4) return true;
+  return !(a === 3 && b === 1);
 }
 
 export interface CatalogEntry {
@@ -68,7 +82,7 @@ export const CATALOG: CatalogEntry[] = (() => {
 /** Local (unrotated) size of an item. */
 export function localSize(item: Item): Size3 {
   if (item.kind === 'kallax') {
-    return { w: kallaxOuter(item.cols), d: KALLAX.depth, h: kallaxOuter(item.rows) };
+    return { w: kallaxOuter(item.cols), d: KALLAX.depth, h: kallaxOuter(item.rows) + (item.legs ? KALLAX.legs : 0) };
   }
   return { ...item.size };
 }
@@ -120,5 +134,5 @@ export function fmtCm(v: number): string {
 }
 
 export function kallaxDisplayName(it: KallaxItem): string {
-  return `Kallax ${it.cols}×${it.rows}`;
+  return `Kallax ${it.cols}×${it.rows}${it.legs ? ' + piètement' : ''}`;
 }

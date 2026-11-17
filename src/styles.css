@@ -1118,3 +1118,16 @@ body.moving .viewport canvas { cursor: grabbing !important; }
 .alert-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus); }
 .alert-form .alert-btns { flex-direction: row; }
 .alert-form .alert-btn { flex: 1; }
+
+/* ── IKEA references ──────────────────────────────────────── */
+.lib-refs { padding-bottom: 18px; }
+.ref-list { list-style: none; margin: 0; padding: 0 12px; display: grid; gap: 2px; }
+.ref-link {
+  display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 7px;
+  color: var(--accent-text); text-decoration: none; font-size: 12.5px;
+  transition: background var(--t-fast) ease;
+}
+.ref-link:hover { background: var(--fill-2); }
+.ref-link:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus); }
+.ref-note { margin: 8px 20px 0; font-size: 11px; line-height: 1.45; color: var(--text-3); }
+.switch-row.disabled, .row.disabled { opacity: .45; }

@@ -27,6 +27,8 @@ export interface KallaxItem extends ItemBase {
   kind: 'kallax';
   cols: number;
   rows: number;
+  /** KALLAX underframe ("piètement" / "support"): raises the unit by KALLAX.legs. */
+  legs?: boolean;
 }
 
 /** Free rectangular block to simulate custom objects (radiator, window sill, bed…). */
