@@ -153,7 +153,7 @@ function itemPanel(id: string): Panel {
     colsSt = stepper({ label: 'Colonnes', value: it0.cols, min: 1, max: MAX_CELLS, onChange: v => store.update(d => { const x = d.items.find(i => i.id === id); if (x && x.kind === 'kallax') { x.name = renameKallax(x, x.cols, x.rows, v, x.rows); x.cols = v; } }) });
     rowsSt = stepper({ label: 'Lignes', value: it0.rows, min: 1, max: MAX_CELLS, onChange: v => store.update(d => { const x = d.items.find(i => i.id === id); if (x && x.kind === 'kallax') { x.name = renameKallax(x, x.cols, x.rows, x.cols, v); x.rows = v; } }) });
     legsSw = switchRow({
-      label: 'Piètement', hint: `+${fmtCm(KALLAX.legs)} cm · cadre 77 ou 147 de large`, icon: 'arrowUp', value: !!it0.legs,
+      label: 'Piètement', hint: `+${fmtCm(KALLAX.legs)} cm · 2×2, 2×4, 4×3, 4×4`, icon: 'arrowUp', value: !!it0.legs,
       onChange: v => store.update(d => {
         const x = d.items.find(i => i.id === id);
         if (!x || x.kind !== 'kallax' || !!x.legs === v) return;
@@ -236,11 +236,11 @@ function itemPanel(id: string): Panel {
       typeLabel.replaceChildren(`Kallax ${it.cols}×${it.rows} · ${kallaxNominal(it.cols)}×${kallaxNominal(it.rows)} cm `,
         h('span', { class: `pill ${off ? 'pill-ikea' : 'pill-custom'}` }, off ? 'IKEA' : 'Sur mesure'));
       colsSt!.set(it.cols); rowsSt!.set(it.rows);
-      const can = legsAvailable(it.cols) || !!it.legs;
+      const can = legsAvailable(it.cols, it.rows) || !!it.legs;
       legsSw!.set(!!it.legs);
       legsSw!.input.disabled = !can || locked;
       legsSw!.el.classList.toggle('disabled', !can);
-      legsSw!.el.title = can ? '' : 'IKEA propose le piètement pour les cadres de 2 ou 4 cases de large';
+      legsSw!.el.title = can ? '' : 'Piètement IKEA : 2×2, 2×4 debout, 4×2 / 4×3 couchés, 4×4';
     } else if (it.shape === 'cylinder' || it.shape === 'square') {
       const c = cylinderDims(it);
       typeLabel.textContent = it.shape === 'square'

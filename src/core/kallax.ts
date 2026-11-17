@@ -12,6 +12,7 @@
 
 import type { Item, KallaxItem, Size3, Vec3 } from './types';
 import { orientDir, orientSize } from './orient';
+import { frameSold, legsCompatible } from './finishes';
 
 export const KALLAX = {
   depth: 39,
@@ -23,9 +24,9 @@ export const KALLAX = {
   legs: 17.5,
 } as const;
 
-/** IKEA sells the underframe for 2-wide (77) and 4-wide (147) frames. */
-export function legsAvailable(cols: number): boolean {
-  return cols === 2 || cols === 4;
+/** Underframe compatibility (2×2, 2×4 standing, 4×2 / 4×3 lying, 4×4). */
+export function legsAvailable(cols: number, rows: number): boolean {
+  return legsCompatible(cols, rows);
 }
 
 /** IKEA reference pages. */
@@ -45,15 +46,9 @@ export function kallaxNominal(n: number): number {
   return Math.round(kallaxOuter(n) + 0.5);
 }
 
-/**
- * Frames sold by IKEA (either orientation): 5 → only 5×5; 4 → 4×4, 4×3, 4×2, 4×1;
- * up to 3 → every combination except the 3-cell 3×1 / 1×3. Others are "sur mesure".
- */
+/** Frames sold by IKEA (either orientation) = those with a price (core/finishes.ts). Others are "sur mesure". */
 export function isOfficial(cols: number, rows: number): boolean {
-  const a = Math.max(cols, rows), b = Math.min(cols, rows);
-  if (a === 5) return b === 5;
-  if (a === 4) return true;
-  return !(a === 3 && b === 1);
+  return frameSold(cols, rows);
 }
 
 export interface CatalogEntry {

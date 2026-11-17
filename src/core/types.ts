@@ -34,6 +34,8 @@ export interface KallaxItem extends ItemBase {
   legs?: boolean;
   /** Cell fittings, keyed "col,row" (col from the left, row from the bottom, as seen from the front). */
   inserts?: Record<string, InsertType>;
+  /** Finish override (else the document's global finish). */
+  finish?: import('./finishes').FinishId;
 }
 
 /** KALLAX cell fittings ("habillage"). */
@@ -70,6 +72,10 @@ export interface DesignDoc {
   items: Item[];
   layers: Layer[];
   activeLayerId: string;
+  /** Global finish for every KALLAX (each unit can override it). */
+  finish?: import('./finishes').FinishId;
+  /** BRANÄS basket variant. */
+  basket?: import('./finishes').BasketVariant;
 }
 
 export type ThemeName = 'blueprint' | 'paper';
@@ -103,6 +109,8 @@ export interface Settings {
   snapItems: boolean;
   showGrid: boolean;
   showAxes: boolean;
+  /** Fill KALLAX faces with their finish colour (wood, white, black-brown…). */
+  finishColors: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -120,4 +128,5 @@ export const DEFAULT_SETTINGS: Settings = {
   snapItems: true,
   showGrid: true,
   showAxes: true,
+  finishColors: false,
 };
