@@ -90,6 +90,22 @@ export function boxesFree(boxes: Box3[], ignoreIds: string[]): boolean {
   return true;
 }
 
+/** Max distance (cm) an item may be placed from the composition (or the origin). */
+const REACH_MARGIN = 800;
+const REACH_MIN = 1500;
+
+function isReasonable(pos: Vec3, size: Record<Axis, number>, others: Item[]): boolean {
+  if (![pos.x, pos.y, pos.z].every(Number.isFinite)) return false;
+  const c = { x: pos.x + size.x / 2, y: pos.y + size.y / 2 };
+  let cx = 0, cy = 0, radius = 0;
+  if (others.length) {
+    const u = unionBox(others)!;
+    cx = (u.min.x + u.max.x) / 2; cy = (u.min.y + u.max.y) / 2;
+    radius = Math.hypot(u.max.x - u.min.x, u.max.y - u.min.y) / 2;
+  }
+  return Math.hypot(c.x - cx, c.y - cy) <= Math.max(REACH_MIN, radius + REACH_MARGIN);
+}
+
 export function computePlacement(o: PlaceOpts): PlaceResult | null {
   const vp = ui.viewport;
   const { item, clientX: cx, clientY: cy } = o;
@@ -136,6 +152,11 @@ export function computePlacement(o: PlaceOpts): PlaceResult | null {
       }
     }
   }
+
+  // ── reach guard: near the horizon (perspective / grazing views) the pointer ray
+  // meets the floor hundreds of metres away. Refuse such positions instead of
+  // flinging the item out of sight — the gesture keeps its last valid spot.
+  if (!isReasonable(pos, size, others)) return null;
 
   const raw: Vec3 = { ...pos };
 

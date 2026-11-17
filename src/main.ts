@@ -17,6 +17,8 @@ import { buildInspector } from './ui/inspector';
 import { buildStatusbar } from './ui/statusbar';
 import { buildViewportOverlays } from './ui/viewport-overlays';
 import { buildShortcutsSheet } from './ui/shortcuts';
+import { buildProjectsSheet, saveProject, openProjectsSheet } from './ui/projects';
+import { openJSON } from './ui/file-io';
 import { seedIfFirstLaunch } from './ui/seed';
 
 const LS_LAYOUT = 'kallax-designer:layout';
@@ -64,6 +66,20 @@ function boot() {
 
   // chrome
   const sheet = buildShortcutsSheet();
+  buildProjectsSheet({ importJSON: openJSON });
+  // ⌘S / ⇧⌘S / ⌘O work everywhere, even while typing in a field
+  window.addEventListener('keydown', (e) => {
+    if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+    const k = e.key.toLowerCase();
+    if (k === 's') {
+      e.preventDefault();
+      (document.activeElement as HTMLElement | null)?.blur?.();
+      saveProject(e.shiftKey);
+    } else if (k === 'o') {
+      e.preventDefault();
+      openProjectsSheet();
+    }
+  }, true);
   buildToolbar(toolbar, {
     toggleSidebar: () => { layout.sidebar = !layout.sidebar; applyLayout(); },
     toggleInspector: () => { layout.inspector = !layout.inspector; applyLayout(); },
@@ -77,7 +93,7 @@ function boot() {
   installTooltips();
   installPopoverDismiss();
   installSelectMove(viewport);
-  installKeyboard({ openShortcuts: () => sheet.open(), isModalOpen: () => sheet.isOpen() });
+  installKeyboard({ openShortcuts: () => sheet.open(), isModalOpen: () => sheet.isOpen() || !!document.querySelector('dialog[open]') });
 
   store.on(ev => { if (ev === 'settings') applyTheme(); });
 

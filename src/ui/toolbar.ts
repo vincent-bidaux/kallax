@@ -6,7 +6,8 @@ import { icon } from './icons';
 import { button, segmented, switchRow, tip } from './controls';
 import { Popover, fillMenu } from './popover';
 import * as cmd from '../interaction/commands';
-import { newDocument, openJSON, exportJSON, exportPNG } from './file-io';
+import { openJSON, exportJSON, exportPNG } from './file-io';
+import { newProject, saveProject, openProjectsSheet, onProjectsChange, saveStatus, isDirty } from './projects';
 
 export interface ToolbarHooks {
   toggleSidebar(): void;
@@ -43,6 +44,9 @@ export function buildToolbar(host: HTMLElement, hooks: ToolbarHooks) {
   const undoBtn = button({ icon: 'undo', label: 'Annuler', iconOnly: true, kbd: `${MOD}Z`, cls: 'tb-btn', iconSize: 18, onClick: () => store.undo() });
   const redoBtn = button({ icon: 'redo', label: 'Rétablir', iconOnly: true, kbd: `${SHIFT}${MOD}Z`, cls: 'tb-btn', iconSize: 18, onClick: () => store.redo() });
   const history = h('div', { class: 'tb-group' }, undoBtn, redoBtn);
+  const projBtn = button({ icon: 'folder', label: 'Mes projets', iconOnly: true, kbd: `${MOD}O`, cls: 'tb-btn', iconSize: 18, onClick: openProjectsSheet });
+  const saveBtn = button({ icon: 'save', label: 'Enregistrer', iconOnly: true, kbd: `${MOD}S`, cls: 'tb-btn', iconSize: 18, onClick: () => saveProject() });
+  const files = h('div', { class: 'tb-group' }, projBtn, saveBtn);
 
   // ── center: view + projection ──
   const viewSeg = segmented<'iso' | 'cavalier' | 'free'>({
@@ -132,9 +136,12 @@ export function buildToolbar(host: HTMLElement, hooks: ToolbarHooks) {
   // … menu
   const menu = new Popover(moreBtn, { role: 'menu', cls: 'menu-pop', width: 248 });
   fillMenu(menu, [
-    { label: 'Nouveau', icon: 'docNew', action: newDocument },
-    { label: 'Ouvrir JSON…', icon: 'folder', action: openJSON },
-    { label: 'Exporter JSON', icon: 'download', action: exportJSON, separatorBefore: true },
+    { label: 'Nouveau projet', icon: 'docNew', action: () => newProject() },
+    { label: 'Mes projets…', icon: 'folder', kbd: `${MOD}O`, action: openProjectsSheet },
+    { label: 'Enregistrer', icon: 'save', kbd: `${MOD}S`, action: () => saveProject(), separatorBefore: true },
+    { label: 'Enregistrer sous…', icon: 'duplicate', kbd: `${SHIFT}${MOD}S`, action: () => saveProject(true) },
+    { label: 'Importer JSON…', icon: 'folder', action: openJSON, separatorBefore: true },
+    { label: 'Exporter JSON', icon: 'download', action: exportJSON },
     { label: 'Exporter PNG', icon: 'photo', action: exportPNG },
     { label: 'Raccourcis clavier', icon: 'keyboard', kbd: '?', action: hooks.openShortcuts, separatorBefore: true },
   ]);
@@ -146,7 +153,7 @@ export function buildToolbar(host: HTMLElement, hooks: ToolbarHooks) {
     h('div', { class: 'tb-sep', 'aria-hidden': 'true' }),
     inspBtn);
 
-  const left = h('div', { class: 'tb-left' }, sideBtn, glyph, docBlock, h('div', { class: 'tb-sep', 'aria-hidden': 'true' }), history);
+  const left = h('div', { class: 'tb-left' }, sideBtn, glyph, docBlock, h('div', { class: 'tb-sep', 'aria-hidden': 'true' }), files, history);
   host.append(left, center, right);
   host.setAttribute('role', 'toolbar');
   host.setAttribute('aria-label', 'Barre d’outils');
@@ -172,8 +179,12 @@ export function buildToolbar(host: HTMLElement, hooks: ToolbarHooks) {
     undoBtn.disabled = !store.canUndo();
     redoBtn.disabled = !store.canRedo();
     if (document.activeElement !== nameInput) { nameInput.value = store.doc.name; fitName(); }
-    document.title = `${store.doc.name} — Kallax Designer`;
+    document.title = `${isDirty() ? '• ' : ''}${store.doc.name} — Kallax Designer`;
+    docSub.textContent = saveStatus();
+    docSub.classList.toggle('dirty', isDirty());
+    saveBtn.classList.toggle('dirty', isDirty());
   };
+  onProjectsChange(syncDoc);
   store.on(ev => { if (ev === 'settings') sync(); if (ev === 'doc') syncDoc(); });
   sync(); syncDoc();
 }

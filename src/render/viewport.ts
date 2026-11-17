@@ -206,6 +206,7 @@ export class Viewport implements ViewportAPI {
     c.screenSpacePanning = true;
     c.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.PAN };
     c.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
+    c.maxPolarAngle = Math.PI / 2;
     c.minZoom = ORTHO_BASE / MAX_VIEW_H;
     c.maxZoom = ORTHO_BASE / MIN_VIEW_H;
     this.configureControlsFor(this.camera);
@@ -523,6 +524,10 @@ export class Viewport implements ViewportAPI {
     c._sphericalDelta?.set(0, 0, 0);
     c._panOffset?.set(0, 0, 0);
     if (typeof c._scale === 'number') c._scale = 1;
+    // Manual orbit stays above the floor (looking from below is disorienting);
+    // the "DESSOUS" ViewCube face can still go there on purpose.
+    const below = this.camera.position.z < this.controls.target.z - 1e-3;
+    this.controls.maxPolarAngle = below ? Math.PI : Math.PI / 2;
     this.applyingPose = true;
     this.controls.update();
     this.applyingPose = false;

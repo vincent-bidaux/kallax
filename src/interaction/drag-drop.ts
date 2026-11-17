@@ -74,6 +74,8 @@ export function beginLibraryDrag(e: PointerEvent, source: HTMLElement, make: () 
       return;
     }
     const res = computePlacement({ item, clientX: ev.clientX, clientY: ev.clientY, ignoreIds: [] });
+    // Out-of-reach pointer (near the horizon…): keep the last valid ghost.
+    if (!res && last) return;
     last = res;
     if (res) {
       item.position = res.position;

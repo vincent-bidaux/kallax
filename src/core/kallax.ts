@@ -31,8 +31,12 @@ export function kallaxNominal(n: number): number {
   return Math.round(kallaxOuter(n) + 0.5);
 }
 
-/** Configurations sold by IKEA as frames (cols × rows). Others are "sur mesure" combos. */
-const OFFICIAL = new Set(['1x2', '2x1', '2x2', '1x4', '4x1', '2x4', '4x2', '4x4', '2x5', '5x2', '5x5', '1x3', '3x1']);
+/**
+ * Frames sold by IKEA (cols × rows), per the IKEA FR "Sélectionnez la dimension
+ * de votre KALLAX" range: 1, 2, 4 (1×4), 4 (2×2), 8, 12, 16 and 25 cells — each
+ * usable upright or lying down. Other combinations are "sur mesure".
+ */
+const OFFICIAL = new Set(['1x1', '1x2', '2x1', '1x4', '4x1', '2x2', '2x4', '4x2', '3x4', '4x3', '4x4', '5x5']);
 export function isOfficial(cols: number, rows: number): boolean {
   return OFFICIAL.has(`${cols}x${rows}`);
 }
@@ -48,13 +52,10 @@ export interface CatalogEntry {
 
 /** Ordered catalogue shown in the library. */
 export const CATALOG: CatalogEntry[] = (() => {
-  const order: [number, number][] = [
-    [1, 1], [2, 1], [3, 1], [4, 1], [5, 1],
-    [1, 2], [2, 2], [3, 2], [4, 2], [5, 2],
-    [1, 3], [2, 3], [3, 3], [4, 3],
-    [1, 4], [2, 4], [3, 4], [4, 4],
-    [1, 5], [2, 5], [5, 5],
-  ];
+  // Every combination from 1×1 to 5×5, row by row.
+  const order: [number, number][] = [];
+  for (let rows = 1; rows <= MAX_CELLS; rows++)
+    for (let cols = 1; cols <= MAX_CELLS; cols++) order.push([cols, rows]);
   return order.map(([cols, rows]) => ({
     cols, rows,
     label: `${cols}×${rows}`,

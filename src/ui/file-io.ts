@@ -3,6 +3,7 @@ import { store } from '../core/store';
 import type { DesignDoc } from '../core/types';
 import { ui } from '../interaction/context';
 import { h, toast } from './dom';
+import { detachProject } from './projects';
 
 function slug(s: string) {
   return s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'kallax';
@@ -47,6 +48,8 @@ export function openJSON() {
       if (!validDoc(d)) throw new Error('format');
       if (!d.layers.some(l => l.id === d.activeLayerId)) d.activeLayerId = d.layers[0].id;
       store.loadDoc(d);
+      store.clearHistory();
+      detachProject();
       ui.viewport.zoomToFit(true);
       toast(`« ${d.name} » ouvert`);
     } catch {

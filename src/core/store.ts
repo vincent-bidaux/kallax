@@ -27,6 +27,18 @@ function emptyDoc(): DesignDoc {
 
 const clone = <T>(v: T): T => structuredClone(v);
 
+/** Items lost far away (|coord| > 100 m or NaN, from an older placement bug) are brought back next to the rest. */
+const STRAY_LIMIT = 10000;
+function rescueStrays(d: DesignDoc): DesignDoc {
+  const ok = (i: Item) => [i.position.x, i.position.y, i.position.z].every(v => Number.isFinite(v) && Math.abs(v) < STRAY_LIMIT);
+  const strays = d.items.filter(i => !ok(i));
+  if (!strays.length) return d;
+  let x = 0;
+  for (const i of d.items) if (ok(i)) x = Math.max(x, i.position.x + 200);
+  for (const i of strays) { i.position = { x, y: 0, z: 0 }; x += 200; }
+  return d;
+}
+
 class Store {
   doc: DesignDoc;
   settings: Settings;
@@ -186,7 +198,7 @@ class Store {
       if (!raw) return null;
       const d = JSON.parse(raw) as DesignDoc;
       if (d?.version !== 1 || !Array.isArray(d.items) || !Array.isArray(d.layers) || !d.layers.length) return null;
-      return d;
+      return rescueStrays(d);
     } catch { return null; }
   }
   private loadSettings(): Partial<Settings> {
