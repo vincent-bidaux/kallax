@@ -14,6 +14,7 @@ const GROUPS: [string, [string, string[]][]][] = [
   ['Objets', [
     ['Pivoter +90°', ['R']],
     ['Pivoter −90°', [`${SHIFT}R`]],
+    ['Basculer autour de X / Y', ['X', 'Y']],
     ['Déplacer d’un pas de grille', ['←', '↑', '→', '↓']],
     ['Déplacer ×10', [SHIFT, '←↑→↓']],
     ['Monter / descendre', ['Page↑', 'Page↓']],

@@ -18,7 +18,10 @@ interface ItemBase {
   id: string;
   name: string;
   position: Vec3;
+  /** Rotation about Z (vertical). */
   rotation: Rotation;
+  /** Extra 90° steps about X and Y (see core/orient.ts). Absent = upright. */
+  tilt?: { x: Rotation; y: Rotation };
   layerId: string;
 }
 
@@ -36,6 +39,13 @@ export interface BlockItem extends ItemBase {
   kind: 'block';
   /** Local size before rotation: w along local X, d along local Y, h along Z. */
   size: Size3;
+  /**
+   * 'cylinder' = round beam ("poutre ronde"). Its axis is local X when
+   * `axis === 'x'` (size = length × Ø × Ø) or Z when `axis === 'z'` (Ø × Ø × length).
+   * 'wall' = opaque plane (no thickness: size.d = 0) that masks what is behind it.
+   */
+  shape?: 'box' | 'cylinder' | 'wall';
+  axis?: 'x' | 'z';
 }
 
 export type Item = KallaxItem | BlockItem;

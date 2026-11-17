@@ -151,7 +151,8 @@ export class MaterialLibrary {
         inner: this.line({ color: mixColor(t.lineSoft, t.select, 0.75).getStyle(), width: W.modelInner + 0.4 }),
       },
     };
-    this.hidden = this.hiddenLine(t.lineSoft, W.hidden, 0.75);
+    // Hidden edges: discreet — thin, faded towards the fill colour.
+    this.hidden = this.hiddenLine(mixColor(t.lineSoft, t.fill, 0.35).getStyle(), Math.max(0.75, W.hidden - 0.25), 0.38);
 
     // ── ghost ───────────────────────────────────────────────
     const ghost = (c: string): GhostMaterials => ({

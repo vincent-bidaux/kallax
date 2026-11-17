@@ -11,6 +11,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import type { Item, KallaxItem, Size3, Vec3 } from './types';
+import { orientDir, orientSize } from './orient';
 
 export const KALLAX = {
   depth: 39,
@@ -89,8 +90,7 @@ export function localSize(item: Item): Size3 {
 
 /** World-axis size after rotation about Z. */
 export function worldSize(item: Item): Size3 {
-  const s = localSize(item);
-  return item.rotation === 90 || item.rotation === 270 ? { w: s.d, d: s.w, h: s.h } : s;
+  return orientSize(localSize(item), item);
 }
 
 export interface Box3 { min: Vec3; max: Vec3 }
@@ -114,12 +114,7 @@ export function unionBox(items: Item[]): Box3 | null {
 
 /** Unit vector the open front of an item faces (rotation 0 → −Y, towards the viewer). */
 export function frontNormal(item: Item): Vec3 {
-  switch (item.rotation) {
-    case 0: return { x: 0, y: -1, z: 0 };
-    case 90: return { x: 1, y: 0, z: 0 };
-    case 180: return { x: 0, y: 1, z: 0 };
-    case 270: return { x: -1, y: 0, z: 0 };
-  }
+  return orientDir(item, { x: 0, y: -1, z: 0 });
 }
 
 export function boxesOverlap(a: Box3, b: Box3, eps = 0.01): boolean {
@@ -135,4 +130,21 @@ export function fmtCm(v: number): string {
 
 export function kallaxDisplayName(it: KallaxItem): string {
   return `Kallax ${it.cols}×${it.rows}${it.legs ? ' + piètement' : ''}`;
+}
+
+// ── round beams (cylinder blocks) ─────────────────────────────
+export function isCylinder(it: Item): it is import('./types').BlockItem & { shape: 'cylinder' } {
+  return it.kind === 'block' && it.shape === 'cylinder';
+}
+/** Diameter / length of a cylinder block. */
+export function cylinderDims(it: import('./types').BlockItem): { diameter: number; length: number; axis: 'x' | 'z' } {
+  const axis = it.axis ?? 'x';
+  return axis === 'x' ? { diameter: it.size.h, length: it.size.w, axis } : { diameter: it.size.w, length: it.size.h, axis };
+}
+export function cylinderSize(diameter: number, length: number, axis: 'x' | 'z'): Size3 {
+  return axis === 'x' ? { w: length, d: diameter, h: diameter } : { w: diameter, d: diameter, h: length };
+}
+
+export function isWall(it: Item): boolean {
+  return it.kind === 'block' && it.shape === 'wall';
 }

@@ -63,7 +63,9 @@ export function installKeyboard(hooks: KeyboardHooks) {
     }
     if (inWidget && (k === ' ' || k === 'Enter')) return;
     switch (kl) {
-      case 'r': handled(); cmd.rotateSelection(e.shiftKey ? -90 : 90); return;
+      case 'r': case 'R': handled(); cmd.rotateSelection(e.shiftKey ? -90 : 90, 'z'); return;
+      case 'x': case 'X': handled(); cmd.rotateSelection(e.shiftKey ? -90 : 90, 'x'); return;
+      case 'y': case 'Y': handled(); cmd.rotateSelection(e.shiftKey ? -90 : 90, 'y'); return;
       case '1': handled(); cmd.setView('iso'); return;
       case '2': handled(); cmd.setView('cavalier'); return;
       case 'f': handled(); cmd.zoomToFit(); return;

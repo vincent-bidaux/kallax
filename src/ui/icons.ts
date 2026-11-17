@@ -31,6 +31,8 @@ const P: Record<string, string> = {
   cursor: '<path d="M5.5 3.5 18 11l-5.6 1.4-2.6 5.6z"/>',
   keyboard: '<rect x="2.5" y="6" width="19" height="12" rx="2.2"/><path d="M6 9.5h.01M9 9.5h.01M12 9.5h.01M15 9.5h.01M18 9.5h.01M6 12h.01M9 12h.01M12 12h.01M15 12h.01M18 12h.01M8 15h8"/>',
   docNew: '<path d="M13.5 3.5H7A2 2 0 0 0 5 5.5v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9z"/><path d="M13.5 3.5V9H19M12 12v5M9.5 14.5h5"/>',
+  cylinder: '<ellipse cx="6.5" cy="12" rx="2.5" ry="4.5"/><path d="M6.5 7.5h11M6.5 16.5h11"/><path d="M17.5 7.5a2.5 4.5 0 0 1 0 9"/>',
+  wall: '<rect x="4" y="4.5" width="16" height="15" rx="1.5"/><path d="M4 9.5h16M4 14.5h16M10 4.5v5M15 9.5v5M9 14.5v5"/>',
   save: '<path d="M12 3.5v10.5M7.8 9.8 12 14l4.2-4.2"/><path d="M4.5 14.5v3a2.5 2.5 0 0 0 2.5 2.5h10a2.5 2.5 0 0 0 2.5-2.5v-3"/>',
   folder: '<path d="M3.5 7.5A2 2 0 0 1 5.5 5.5h4l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/>',
   download: '<path d="M12 4v11M7.5 10.5 12 15l4.5-4.5"/><path d="M4.5 15.5v2.5a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-2.5"/>',

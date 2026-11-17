@@ -1,7 +1,8 @@
 // User commands shared by keyboard shortcuts, inspector and menus.
 // Each command = at most one store.update() (one undo step).
 import { store, uid } from '../core/store';
-import type { Item, Rotation, Settings, ViewPreset, Vec3 } from '../core/types';
+import type { Item, Settings, ViewPreset, Vec3 } from '../core/types';
+import { rotateVec, rotatedOrientation, type Axis3 } from '../core/orient';
 import { itemBox, unionBox, worldSize, boxesOverlap } from '../core/kallax';
 import { ui } from './context';
 import { toast } from '../ui/dom';
@@ -62,22 +63,25 @@ export function duplicate(axis: 'x' | 'y' | 'z' = 'x') {
   store.select(copies.map(c => c.id));
 }
 
-/** Rotate the editable selection by ±90° about its group centre, then re-snap the min corner to the grid. */
-export function rotateSelection(delta: 90 | -90) {
+/** Rotate the editable selection by ±90° about a world axis through its group centre, then re-snap to the grid. */
+export function rotateSelection(delta: 90 | -90, axis: Axis3 = 'z') {
   if (warnLocked()) return;
   const sel = editableSelection();
   if (!sel.length) return;
   const u = unionBox(sel)!;
-  const cx = (u.min.x + u.max.x) / 2, cy = (u.min.y + u.max.y) / 2;
+  const C = { x: (u.min.x + u.max.x) / 2, y: (u.min.y + u.max.y) / 2, z: (u.min.z + u.max.z) / 2 };
   const next = sel.map(it => {
     const s = worldSize(it);
-    const ix = it.position.x + s.w / 2 - cx, iy = it.position.y + s.d / 2 - cy;
-    // CCW (+90): (x, y) → (−y, x)
-    const nx = delta === 90 ? -iy : iy, ny = delta === 90 ? ix : -ix;
-    const rot = (((it.rotation + delta) % 360) + 360) % 360 as Rotation;
-    const ns = worldSize({ ...it, rotation: rot } as Item);
-    return { id: it.id, rot, pos: { x: cx + nx - ns.w / 2, y: cy + ny - ns.d / 2, z: it.position.z } };
+    const c = { x: it.position.x + s.w / 2 - C.x, y: it.position.y + s.d / 2 - C.y, z: it.position.z + s.h / 2 - C.z };
+    const nc = rotateVec(c, axis, delta);
+    const o = rotatedOrientation(it, axis, delta);
+    const ns = worldSize({ ...it, rotation: o.rotation, tilt: o.tilt } as Item);
+    return { id: it.id, o, pos: { x: C.x + nc.x - ns.w / 2, y: C.y + nc.y - ns.d / 2, z: C.z + nc.z - ns.h / 2 } };
   });
+  // keep the group on/above the floor (X/Y rotations change heights): rest it where it was
+  const minZ0 = u.min.z;
+  const minZ1 = Math.min(...next.map(n => n.pos.z));
+  const dz = axis === 'z' ? 0 : minZ0 - minZ1;
   // re-snap the group's min corner
   let dx = 0, dy = 0;
   if (store.settings.snapGrid) {
@@ -89,8 +93,9 @@ export function rotateSelection(delta: 90 | -90) {
     for (const n of next) {
       const it = d.items.find(i => i.id === n.id);
       if (!it) continue;
-      it.rotation = n.rot;
-      it.position = { x: r3(n.pos.x + dx), y: r3(n.pos.y + dy), z: n.pos.z };
+      it.rotation = n.o.rotation;
+      if (n.o.tilt) it.tilt = n.o.tilt; else delete it.tilt;
+      it.position = { x: r3(n.pos.x + dx), y: r3(n.pos.y + dy), z: r3(Math.max(0, n.pos.z + dz)) };
     }
   });
 }

@@ -9,6 +9,7 @@
 //       └ hidden   every edge, dashed, drawn only where occluded (transparency)
 import * as THREE from 'three';
 import { LineSegments2, LineMaterial } from './lines';
+import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js';
 import { acquireGeometry, geometryKey, releaseGeometry, type ItemGeometry } from './item-geometry';
 import { MaterialLibrary, RO, type VisualState } from './materials';
 import { itemBox, localSize, worldSize } from '../core/kallax';
@@ -25,6 +26,10 @@ export class ItemView {
   readonly outer: LineSegments2;
   readonly inner: LineSegments2;
   readonly hidden: LineSegments2;
+  /** Round beams: the two silhouette generators, rebuilt when the view changes. */
+  readonly sil: LineSegments2;
+  private silGeo = new LineSegmentsGeometry();
+  private silKey = '';
   state: VisualState = 'normal';
   private transformKey = '';
 
@@ -42,6 +47,10 @@ export class ItemView {
       this.content.add(o);
     }
     this.inner.visible = !!this.geo.inner;
+    this.sil = new LineSegments2(this.silGeo);
+    (this.sil.material as THREE.Material).dispose();
+    this.sil.visible = false;
+    this.content.add(this.sil);
     this.group.add(this.content);
     if (!isGhost) {
       this.face.userData.itemId = item.id;
@@ -71,17 +80,48 @@ export class ItemView {
     }
     if (!this.isGhost) this.face.userData.itemId = item.id;
     const p = item.position;
-    const key = `${p.x},${p.y},${p.z},${item.rotation},${this.geo.key}`;
+    const tx = item.tilt?.x ?? 0, ty = item.tilt?.y ?? 0;
+    const key = `${p.x},${p.y},${p.z},${item.rotation},${tx},${ty},${this.geo.key}`;
     if (key === this.transformKey) return;
     this.transformKey = key;
     const ws = worldSize(item), ls = localSize(item);
-    this.group.position.set(p.x + ws.w / 2, p.y + ws.d / 2, p.z);
-    this.group.rotation.set(0, 0, THREE.MathUtils.degToRad(item.rotation));
-    this.content.position.set(-ls.w / 2, -ls.d / 2, 0);
+    // pivot at the centre of the world AABB; R = Rz·Ry·Rx (Euler order 'ZYX')
+    this.group.position.set(p.x + ws.w / 2, p.y + ws.d / 2, p.z + ws.h / 2);
+    const r = THREE.MathUtils.degToRad;
+    this.group.rotation.set(r(tx), r(ty), r(item.rotation), 'ZYX');
+    this.content.position.set(-ls.w / 2, -ls.d / 2, -ls.h / 2);
     this.group.updateMatrixWorld(true);
     const b = itemBox(item);
     this.box.min.set(b.min.x, b.min.y, b.min.z);
     this.box.max.set(b.max.x, b.max.y, b.max.z);
+  }
+
+  /**
+   * Cylinder silhouette: the generators where the surface turns away from the
+   * viewer. `projDir` = world projection direction (towards the scene) for
+   * parallel projections; `camPos` for perspective.
+   */
+  updateSilhouette(projDir: THREE.Vector3, camPos: THREE.Vector3 | null) {
+    const c = this.geo.cylinder;
+    if (!c) { this.sil.visible = false; return; }
+    const inv = this.group.quaternion.clone().invert();
+    let dir: THREE.Vector3;
+    if (camPos) {
+      const centreW = this.content.localToWorld(c.a.clone().lerp(c.b, 0.5));
+      dir = centreW.sub(camPos).applyQuaternion(inv);
+    } else dir = projDir.clone().applyQuaternion(inv);
+    const axis = c.b.clone().sub(c.a).normalize();
+    const side = axis.clone().cross(dir);
+    if (side.lengthSq() < 1e-8) { this.sil.visible = false; return; } // looking down the axis: circles only
+    side.normalize().multiplyScalar(c.r);
+    const key = `${side.x.toFixed(3)},${side.y.toFixed(3)},${side.z.toFixed(3)}|${this.geo.key}`;
+    this.sil.visible = true;
+    if (key === this.silKey) return;
+    this.silKey = key;
+    const p1 = c.a.clone().add(side), p2 = c.b.clone().add(side);
+    const q1 = c.a.clone().sub(side), q2 = c.b.clone().sub(side);
+    this.silGeo.setPositions([p1.x, p1.y, p1.z, p2.x, p2.y, p2.z, q1.x, q1.y, q1.z, q2.x, q2.y, q2.z]);
+    this.silGeo.computeBoundingSphere();
   }
 
   /** Assign shared materials for the current state / mode. */
@@ -94,6 +134,8 @@ export class ItemView {
     this.outer.material = lib.lines[state].outer;
     this.inner.material = lib.lines[state].inner;
     this.hidden.material = lib.hidden;
+    this.sil.material = lib.lines[state].outer;
+    this.sil.renderOrder = state !== 'normal' ? RO.line + 0.5 : RO.line;
 
     this.prepass.visible = transp;
     this.hidden.visible = transp;
@@ -115,6 +157,8 @@ export class ItemView {
     this.outer.material = g.outer;
     this.inner.material = g.inner;
     this.hidden.material = g.hidden;
+    this.sil.material = g.outer;
+    this.sil.renderOrder = RO.ghostLine;
     this.prepass.visible = true;
     this.hidden.visible = true;
     this.inner.visible = !!this.geo.inner;
@@ -128,6 +172,7 @@ export class ItemView {
 
   dispose() {
     this.group.removeFromParent();
+    this.silGeo.dispose();
     releaseGeometry(this.geo);
   }
 }

@@ -1,5 +1,5 @@
 // Library: KALLAX catalogue tiles (to-scale front elevations) + free block builder.
-import { CATALOG, IKEA_LINKS, KALLAX, fmtCm, kallaxOuter, type CatalogEntry } from '../core/kallax';
+import { CATALOG, IKEA_LINKS, KALLAX, fmtCm, kallaxOuter, cylinderSize, type CatalogEntry } from '../core/kallax';
 import { store, uid } from '../core/store';
 import type { BlockItem, Item, KallaxItem } from '../core/types';
 import { h, svg } from './dom';
@@ -167,6 +167,71 @@ export function buildLibrary(host: HTMLElement) {
     h('p', { class: 'ref-note' },
       `Cotes réelles : 35 × n + 6,5 cm (41,5 · 76,5 · 111,5 · 146,5 · 181,5), profondeur 39. Piètement +${fmtCm(KALLAX.legs)} cm (vendu « 18 cm »).`),
   );
-  host.append(kallaxSec, blockSec, refSec);
+  // ── POUTRE RONDE ──
+  const beam = { diameter: 12, length: 200, axis: 'x' as 'x' | 'z', name: 'Poutre' };
+  const beamDims = h('div', { class: 'tile-sub' });
+  const beamTile = h('div', {
+    class: 'lib-tile block-tile', role: 'button', tabindex: '0',
+    'aria-label': 'Poutre ronde : glisser dans la vue ou Entrée pour ajouter',
+  }, h('div', { class: 'tile-art block-art shape-art' }, icon('cylinder', 40)),
+    h('div', { class: 'block-tile-text' }, h('div', { class: 'tile-label' }, 'Poutre ronde'), beamDims),
+    h('span', { class: 'block-grip', 'aria-hidden': 'true' }, icon('grip', 16)));
+  tip(beamTile, 'Glissez la poutre dans la vue');
+  const makeBeam = (): BlockItem => ({
+    id: uid(), kind: 'block', shape: 'cylinder', axis: beam.axis, name: beam.name || 'Poutre',
+    size: cylinderSize(beam.diameter, beam.length, beam.axis),
+    position: { x: 0, y: 0, z: 0 }, rotation: 0, layerId: store.doc.activeLayerId,
+  });
+  beamTile.addEventListener('pointerdown', (ev) => beginLibraryDrag(ev, beamTile, makeBeam, beam.name || 'Poutre'));
+  beamTile.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); insertAtFreeSpot(makeBeam()); } });
+  const refreshBeam = () => { beamDims.textContent = `Ø ${fmtCm(beam.diameter)} × ${fmtCm(beam.length)} cm · ${beam.axis === 'x' ? 'horizontale' : 'verticale'}`; };
+  const fDia = numberField({ label: 'Ø', ariaLabel: 'Diamètre (cm)', value: beam.diameter, step: 0.5, min: 0.5, max: 500, suffix: 'cm', onCommit: v => { beam.diameter = v; refreshBeam(); } });
+  const fLen = numberField({ label: 'L', ariaLabel: 'Longueur (cm)', value: beam.length, step: 1, min: 1, max: 2000, suffix: 'cm', onCommit: v => { beam.length = v; refreshBeam(); } });
+  tip(fDia.el, 'Diamètre'); tip(fLen.el, 'Longueur');
+  const axisSeg = segmented<'x' | 'z'>({
+    ariaLabel: 'Orientation de la poutre', size: 'sm', value: beam.axis,
+    options: [{ value: 'x', label: 'Horizontale' }, { value: 'z', label: 'Verticale' }],
+    onChange: v => { beam.axis = v; refreshBeam(); },
+  });
+  const beamName = textField({ label: 'Nom', value: beam.name, placeholder: 'Poutre', onCommit: v => { beam.name = v; } });
+  const beamSec = h('section', { class: 'panel-section' },
+    h('div', { class: 'section-head' }, h('h3', { class: 'section-title' }, 'POUTRE RONDE')),
+    h('div', { class: 'fields-2' }, fDia.el, fLen.el),
+    axisSeg.el,
+    beamName.el,
+    beamTile,
+  );
+  refreshBeam();
+
+  // ── MUR ──
+  const wall = { w: 300, h: 250, name: 'Mur' };
+  const wallDims = h('div', { class: 'tile-sub' });
+  const wallTile = h('div', {
+    class: 'lib-tile block-tile', role: 'button', tabindex: '0',
+    'aria-label': 'Mur : glisser dans la vue ou Entrée pour ajouter',
+  }, h('div', { class: 'tile-art block-art shape-art' }, icon('wall', 40)),
+    h('div', { class: 'block-tile-text' }, h('div', { class: 'tile-label' }, 'Mur (plan)'), wallDims),
+    h('span', { class: 'block-grip', 'aria-hidden': 'true' }, icon('grip', 16)));
+  tip(wallTile, 'Plan opaque qui masque ce qui est derrière · X / Y / R pour pivoter');
+  const makeWall = (): BlockItem => ({
+    id: uid(), kind: 'block', shape: 'wall', name: wall.name || 'Mur',
+    size: { w: wall.w, d: 0, h: wall.h },
+    position: { x: 0, y: 0, z: 0 }, rotation: 0, layerId: store.doc.activeLayerId,
+  });
+  wallTile.addEventListener('pointerdown', (ev) => beginLibraryDrag(ev, wallTile, makeWall, wall.name || 'Mur'));
+  wallTile.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); insertAtFreeSpot(makeWall()); } });
+  const refreshWall = () => { wallDims.textContent = `${fmtCm(wall.w)} × ${fmtCm(wall.h)} cm`; };
+  const fWw = numberField({ label: 'L', ariaLabel: 'Largeur du mur (cm)', value: wall.w, step: 1, min: 1, max: 5000, suffix: 'cm', onCommit: v => { wall.w = v; refreshWall(); } });
+  const fWh = numberField({ label: 'H', ariaLabel: 'Hauteur du mur (cm)', value: wall.h, step: 1, min: 1, max: 2000, suffix: 'cm', onCommit: v => { wall.h = v; refreshWall(); } });
+  const wallName = textField({ label: 'Nom', value: wall.name, placeholder: 'Mur', onCommit: v => { wall.name = v; } });
+  const wallSec = h('section', { class: 'panel-section' },
+    h('div', { class: 'section-head' }, h('h3', { class: 'section-title' }, 'MUR')),
+    h('div', { class: 'fields-2' }, fWw.el, fWh.el),
+    wallName.el,
+    wallTile,
+  );
+  refreshWall();
+
+  host.append(kallaxSec, blockSec, beamSec, wallSec, refSec);
   refresh();
 }

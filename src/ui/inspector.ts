@@ -1,7 +1,8 @@
 // Right inspector: composition summary / single item / multi-selection.
 import { store } from '../core/store';
 import type { Item, KallaxItem, Rotation } from '../core/types';
-import { fmtCm, isOfficial, itemBox, kallaxNominal, unionBox, worldSize, boxesOverlap, MAX_CELLS, legsAvailable, KALLAX } from '../core/kallax';
+import { fmtCm, isOfficial, itemBox, kallaxNominal, unionBox, worldSize, boxesOverlap, MAX_CELLS, legsAvailable, KALLAX, cylinderDims, cylinderSize } from '../core/kallax';
+import { itemEuler, type Axis3 } from '../core/orient';
 import { h, clear, toast } from './dom';
 import { icon } from './icons';
 import { button, numberField, stepper, switchRow, textField, tip, type NumberField } from './controls';
@@ -60,9 +61,10 @@ function summaryPanel(): Panel {
       }
     }
     const blocks = new Map<string, { n: number; label: string; sub: string }>();
-    for (const b of all) if (b.kind === 'block') {
-      const key = `${b.name}|${b.size.w}|${b.size.d}|${b.size.h}`;
-      const e = blocks.get(key) ?? { n: 0, label: b.name, sub: dims3(b.size.w, b.size.d, b.size.h) };
+    for (const b of all) if (b.kind === 'block' && b.shape !== 'wall') {
+      const key = `${b.shape ?? 'box'}|${b.name}|${b.size.w}|${b.size.d}|${b.size.h}`;
+      const cyl = b.shape === 'cylinder' ? cylinderDims(b) : null;
+      const e = blocks.get(key) ?? { n: 0, label: b.name, sub: cyl ? `Ø ${fmtCm(cyl.diameter)} × ${fmtCm(cyl.length)}` : dims3(b.size.w, b.size.d, b.size.h) };
       e.n++; blocks.set(key, e);
     }
     const list = h('ul', { class: 'shop-list' });
@@ -112,7 +114,7 @@ function itemPanel(id: string): Panel {
 
   const nameField = textField({ value: it0.name, ariaLabel: 'Nom de l’objet', cls: 'hero-name', onCommit: v => store.patchItem(id, { name: v }) });
   const typeLabel = h('div', { class: 'hero-sub' });
-  const heroIcon = h('div', { class: 'hero-icon' }, icon(isK ? 'grid' : 'box', 22));
+  const heroIcon = h('div', { class: 'hero-icon' }, icon(isK ? 'grid' : it0.shape === 'cylinder' ? 'cylinder' : it0.shape === 'wall' ? 'wall' : 'box', 22));
   const lockBanner = h('div', { class: 'banner', role: 'note' }, icon('lock', 13), 'Calque verrouillé — lecture seule');
   const overlapBanner = h('div', { class: 'banner warn', role: 'alert' }, icon('warning', 13), 'Chevauche un autre objet');
   const dimsHost = h('div');
@@ -124,13 +126,17 @@ function itemPanel(id: string): Panel {
   tip(fy.el, 'Coin avant (Y) — glisser l’étiquette pour ajuster');
   tip(fz.el, 'Base (Z) — glisser l’étiquette pour ajuster');
 
-  const rotVal = h('output', { class: 'rot-val' });
-  const rotM = button({ icon: 'rotateCw', label: 'Pivoter de −90°', iconOnly: true, kbd: '⇧R', cls: 'seg-like', onClick: () => rotateOne(-90) });
-  const rotP = button({ icon: 'rotateCcw', label: 'Pivoter de +90°', iconOnly: true, kbd: 'R', cls: 'seg-like', onClick: () => rotateOne(90) });
-  const rotRow = h('div', { class: 'rot-row' }, rotM, rotVal, rotP);
-  function rotateOne(d: 90 | -90) {
+  const rotRows = (['x', 'y', 'z'] as Axis3[]).map(ax => {
+    const val = h('output', { class: 'rot-val' });
+    const kb = ax === 'z' ? 'R' : ax === 'x' ? 'X' : 'Y';
+    const m = button({ icon: 'rotateCw', label: `Pivoter de −90° autour de ${ax.toUpperCase()}`, iconOnly: true, kbd: `⇧${kb}`, cls: 'seg-like', onClick: () => rotateOne(-90, ax) });
+    const p = button({ icon: 'rotateCcw', label: `Pivoter de +90° autour de ${ax.toUpperCase()}`, iconOnly: true, kbd: kb, cls: 'seg-like', onClick: () => rotateOne(90, ax) });
+    const row = h('div', { class: 'rot-row rot-axis' }, h('span', { class: `rot-ax ax-${ax}` }, ax.toUpperCase()), m, val, p);
+    return { ax, val, m, p, row };
+  });
+  function rotateOne(d: 90 | -90, ax: Axis3) {
     if (!store.selection.includes(id)) store.select([id]);
-    cmd.rotateSelection(d);
+    cmd.rotateSelection(d, ax);
   }
 
   let legsSw: ReturnType<typeof switchRow> | null = null;
@@ -162,6 +168,24 @@ function itemPanel(id: string): Panel {
       }),
     });
     sizeGroup = group('Cases', h('div', { class: 'steppers' }, colsSt.el, rowsSt.el), legsSw.el);
+  } else if (it0.shape === 'cylinder') {
+    const patchCyl = (k: 'diameter' | 'length', v: number) => store.update(d => {
+      const x = d.items.find(i => i.id === id);
+      if (!x || x.kind !== 'block') return;
+      const c = cylinderDims(x);
+      x.size = cylinderSize(k === 'diameter' ? v : c.diameter, k === 'length' ? v : c.length, c.axis);
+    });
+    const c0 = cylinderDims(it0);
+    fw = numberField({ label: 'Ø', ariaLabel: 'Diamètre (cm)', value: c0.diameter, step: 0.5, min: 0.5, suffix: 'cm', onCommit: v => patchCyl('diameter', v) });
+    fh = numberField({ label: 'L', ariaLabel: 'Longueur (cm)', value: c0.length, step: 1, min: 0.5, suffix: 'cm', onCommit: v => patchCyl('length', v) });
+    sizeGroup = group('Poutre ronde', h('div', { class: 'fields-2' }, fw.el, fh.el));
+  } else if (it0.shape === 'wall') {
+    const patchSize = (k: 'w' | 'h', v: number) => store.update(d => {
+      const x = d.items.find(i => i.id === id); if (x && x.kind === 'block') x.size = { ...x.size, [k]: v };
+    });
+    fw = numberField({ label: 'L', axis: 'x', ariaLabel: 'Largeur (cm)', value: it0.size.w, step: 1, min: 1, suffix: 'cm', onCommit: v => patchSize('w', v) });
+    fh = numberField({ label: 'H', axis: 'z', ariaLabel: 'Hauteur (cm)', value: it0.size.h, step: 1, min: 1, suffix: 'cm', onCommit: v => patchSize('h', v) });
+    sizeGroup = group('Mur (plan)', h('div', { class: 'fields-2' }, fw.el, fh.el));
   } else {
     const patchSize = (k: 'w' | 'd' | 'h', v: number) => store.update(d => {
       const x = d.items.find(i => i.id === id); if (x && x.kind === 'block') x.size = { ...x.size, [k]: v };
@@ -184,7 +208,7 @@ function itemPanel(id: string): Panel {
     lockBanner, overlapBanner,
     dimsHost,
     group('Position', h('div', { class: 'fields-3' }, fx.el, fy.el, fz.el)),
-    group('Rotation', rotRow),
+    group('Rotation (pas de 90°)', h('div', { class: 'rot-rows' }, rotRows.map(r => r.row))),
     sizeGroup,
     group('Calque', layerWrap),
     group('Dupliquer', dupBtns),
@@ -193,7 +217,7 @@ function itemPanel(id: string): Panel {
 
   const editables: { setDisabled(d: boolean): void }[] = [fx, fy, fz, nameField];
   if (colsSt) editables.push(colsSt, rowsSt!);
-  if (fw) editables.push(fw, fd!, fh!);
+  for (const f of [fw, fd, fh]) if (f) editables.push(f);
 
   const update = () => {
     const it = store.getItem(id);
@@ -211,6 +235,13 @@ function itemPanel(id: string): Panel {
       legsSw!.input.disabled = !can || locked;
       legsSw!.el.classList.toggle('disabled', !can);
       legsSw!.el.title = can ? '' : 'IKEA propose le piètement pour les cadres de 2 ou 4 cases de large';
+    } else if (it.shape === 'cylinder') {
+      const c = cylinderDims(it);
+      typeLabel.textContent = `Poutre ronde · Ø ${fmtCm(c.diameter)} × ${fmtCm(c.length)} cm`;
+      fw!.set(c.diameter); fh!.set(c.length);
+    } else if (it.shape === 'wall') {
+      typeLabel.textContent = 'Mur · plan opaque';
+      fw!.set(it.size.w); fh!.set(it.size.h);
     } else {
       typeLabel.textContent = 'Bloc libre';
       fw!.set(it.size.w); fd!.set(it.size.d); fh!.set(it.size.h);
@@ -218,8 +249,11 @@ function itemPanel(id: string): Panel {
     dimsHost.replaceChildren(dimsBlock(s.w, s.d, s.h));
     fx.set(it.position.x); fy.set(it.position.y); fz.set(it.position.z);
     for (const f of [fx, fy, fz]) f.setStep(step());
-    rotVal.textContent = `${it.rotation}°`;
-    rotVal.setAttribute('aria-label', `Rotation ${it.rotation} degrés`);
+    const eul = itemEuler(it);
+    for (const r of rotRows) {
+      r.val.textContent = `${eul[r.ax]}°`;
+      r.val.setAttribute('aria-label', `Rotation ${r.ax.toUpperCase()} ${eul[r.ax]} degrés`);
+    }
     // layer picker
     const opts = store.doc.layers.map(l => `${l.id}|${l.name}`).join(';');
     if (layerSel.dataset.opts !== opts) {
@@ -230,7 +264,8 @@ function itemPanel(id: string): Panel {
     // locked state
     lockBanner.hidden = !locked;
     for (const e of editables) e.setDisabled(locked);
-    rotM.disabled = rotP.disabled = delBtn.disabled = locked;
+    for (const r of rotRows) r.m.disabled = r.p.disabled = locked;
+    delBtn.disabled = locked;
     layerSel.disabled = false;
     // overlap
     const b = itemBox(it);

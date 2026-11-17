@@ -174,10 +174,12 @@ export class Viewport implements ViewportAPI {
     this.ground.setGridVisible(s.showGrid);
     this.ground.setAxesVisible(s.showAxes);
 
-    this.hemi = new THREE.HemisphereLight(0xffffff, 0x6f7f99, 1.25);
+    // "Ombrage": shaded faces only (no cast shadows) — a fixed key light from
+    // front-left-top so tops read lightest, fronts mid, sides darkest.
+    this.hemi = new THREE.HemisphereLight(0xffffff, 0x8090a8, 1.05);
     this.hemi.position.set(0, 0, 1);
-    this.sun = new THREE.DirectionalLight(0xffffff, 1.9);
-    this.sun.castShadow = true;
+    this.sun = new THREE.DirectionalLight(0xffffff, 1.55);
+    this.sun.castShadow = false;
     this.sun.shadow.mapSize.set(2048, 2048);
     this.sun.shadow.radius = 3;
     this.sun.shadow.bias = -0.0004;
@@ -698,6 +700,7 @@ export class Viewport implements ViewportAPI {
       this.camera.updateMatrixWorld();
       this.updateCameraDepth();
       this.mats.setPxPerCm(this.height / this.currentH());
+      this.updateSilhouettes();
       for (const cb of this.beforeCbs) { try { cb(); } catch (e) { console.error(e); } }
       this.renderer.render(this.scene, this.camera);
       this.css2d.render(this.ground.labelScene, this.camera);
@@ -710,6 +713,17 @@ export class Viewport implements ViewportAPI {
       this.dirty = true;
       this.schedule();
     }
+  }
+
+  /** View-dependent outlines of round beams. */
+  private updateSilhouettes() {
+    const persp = this.camera === this.persp ? this.camera.position : null;
+    // Parallel projections (incl. the sheared cavalier): the projection direction
+    // is the ray through any pixel, obtained by unprojecting NDC near/far.
+    const n = _v1.set(0, 0, -1).unproject(this.camera);
+    const dir = _v2.set(0, 0, 1).unproject(this.camera).sub(n).normalize();
+    for (const v of this.views.values()) if (v.geo.cylinder) v.updateSilhouette(dir, persp);
+    if (this.ghost?.geo.cylinder) this.ghost.updateSilhouette(dir, persp);
   }
 
   private resize() {
@@ -779,11 +793,10 @@ export class Viewport implements ViewportAPI {
 
   private applyModeFlags() {
     const s = store.settings;
-    this.renderer.shadowMap.enabled = s.shadows;
-    this.renderer.shadowMap.needsUpdate = true;
+    this.renderer.shadowMap.enabled = false;
     this.hemi.visible = s.shadows;
     this.sun.visible = s.shadows;
-    this.ground.setShadowsVisible(s.shadows);
+    this.ground.setShadowsVisible(false);
   }
 
   private applyMode(themeChanged: boolean) {

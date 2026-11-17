@@ -95,7 +95,7 @@ export function buildToolbar(host: HTMLElement, hooks: ToolbarHooks) {
     options: [{ value: 'blueprint', label: 'Plan d’architecte' }, { value: 'paper', label: 'Papier' }],
     onChange: v => store.setSettings({ theme: v }),
   });
-  const swShadows = switchRow({ label: 'Ombres', hint: 'Faces éclairées, ombre au sol', icon: 'shadow', value: store.settings.shadows, onChange: v => store.setSettings({ shadows: v }) });
+  const swShadows = switchRow({ label: 'Ombrage', hint: 'Faces ombrées selon leur orientation', icon: 'shadow', value: store.settings.shadows, onChange: v => store.setSettings({ shadows: v }) });
   const swTransp = switchRow({ label: 'Transparence', hint: 'Arêtes cachées en pointillés', icon: 'transparency', value: store.settings.transparency, onChange: v => store.setSettings({ transparency: v }) });
   const angleSeg = segmented<number>({
     ariaLabel: 'Angle des fuyantes', size: 'sm', value: store.settings.cavalierAngle,

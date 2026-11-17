@@ -1131,3 +1131,19 @@ body.moving .viewport canvas { cursor: grabbing !important; }
 .ref-link:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus); }
 .ref-note { margin: 8px 20px 0; font-size: 11px; line-height: 1.45; color: var(--text-3); }
 .switch-row.disabled, .row.disabled { opacity: .45; }
+
+/* ── 3-axis rotation & 2-field rows ───────────────────────── */
+.fields-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.rot-rows { display: grid; gap: 6px; }
+.rot-row.rot-axis { grid-template-columns: 22px 36px 1fr 36px; }
+.rot-ax {
+  font: 700 11px/1 var(--font-display); text-align: center;
+}
+.rot-ax.ax-x { color: #ff7a7a; }
+.rot-ax.ax-y { color: #7ef0a0; }
+.rot-ax.ax-z { color: #7fd8ff; }
+html.theme-paper .rot-ax.ax-x { color: #e5484d; }
+html.theme-paper .rot-ax.ax-y { color: #30a46c; }
+html.theme-paper .rot-ax.ax-z { color: #0090ff; }
+.shape-art { display: grid; place-items: center; color: var(--text-2); }
+.panel-section > .segmented { margin: 0 0 8px; }

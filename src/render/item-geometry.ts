@@ -7,7 +7,16 @@ import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeome
 import { KALLAX, kallaxOuter, localSize } from '../core/kallax';
 import type { Item, Size3 } from '../core/types';
 
+export interface CylinderInfo {
+  /** Axis end points (local, content space) and radius. */
+  a: THREE.Vector3;
+  b: THREE.Vector3;
+  r: number;
+}
+
 export interface ItemGeometry {
+  /** Set for round beams: silhouette generators are view-dependent. */
+  cylinder?: CylinderInfo;
   key: string;
   size: Size3;
   /** Face mesh (solid, used for hidden-line removal / lighting / shadows). */
@@ -26,6 +35,8 @@ const cache = new Map<string, ItemGeometry>();
 export function geometryKey(item: Item): string {
   if (item.kind === 'kallax') return `k${item.cols}x${item.rows}${item.legs ? 'L' : ''}`;
   const s = item.size;
+  if (item.shape === 'cylinder') return `c${item.axis ?? 'x'}${s.w}x${s.d}x${s.h}`;
+  if (item.shape === 'wall') return `w${s.w}x${s.h}`;
   return `b${s.w}x${s.d}x${s.h}`;
 }
 
@@ -33,7 +44,10 @@ export function acquireGeometry(item: Item): ItemGeometry {
   const key = geometryKey(item);
   let g = cache.get(key);
   if (!g) {
-    g = item.kind === 'kallax' ? buildKallax(key, item.cols, item.rows, !!item.legs) : buildBlock(key, localSize(item));
+    g = item.kind === 'kallax' ? buildKallax(key, item.cols, item.rows, !!item.legs)
+      : item.shape === 'cylinder' ? buildCylinder(key, localSize(item), item.axis ?? 'x')
+      : item.shape === 'wall' ? buildWall(key, localSize(item))
+      : buildBlock(key, localSize(item));
     cache.set(key, g);
   }
   g.refs++;
@@ -201,4 +215,64 @@ function buildBlock(key: string, s: Size3): ItemGeometry {
     all: lineGeo(outer, true),
     refs: 0,
   };
+}
+
+const CYL_SEGMENTS = 64;
+
+/** Round beam: faces + the two end circles. Silhouette lines are added per view (ItemView). */
+function buildCylinder(key: string, s: Size3, axis: 'x' | 'z'): ItemGeometry {
+  const w = Math.max(s.w, 0.1), d = Math.max(s.d, 0.1), h = Math.max(s.h, 0.1);
+  const r = axis === 'x' ? Math.min(d, h) / 2 : Math.min(w, d) / 2;
+  const len = axis === 'x' ? w : h;
+  const face = new THREE.CylinderGeometry(r, r, len, CYL_SEGMENTS, 1, false);
+  // CylinderGeometry runs along +Y; orient it along X or Z, then move into [0,w]×[0,d]×[0,h].
+  if (axis === 'x') face.rotateZ(-Math.PI / 2); else face.rotateX(Math.PI / 2);
+  face.translate(w / 2, d / 2, h / 2);
+  face.computeVertexNormals();
+  face.computeBoundingSphere();
+
+  const a = axis === 'x' ? new THREE.Vector3(0, d / 2, h / 2) : new THREE.Vector3(w / 2, d / 2, 0);
+  const b = axis === 'x' ? new THREE.Vector3(w, d / 2, h / 2) : new THREE.Vector3(w / 2, d / 2, h);
+  const circles: number[] = [];
+  for (const c of [a, b]) {
+    for (let i = 0; i < CYL_SEGMENTS; i++) {
+      const t0 = (i / CYL_SEGMENTS) * Math.PI * 2, t1 = ((i + 1) / CYL_SEGMENTS) * Math.PI * 2;
+      if (axis === 'x') pushSeg(circles, c.x, c.y + r * Math.cos(t0), c.z + r * Math.sin(t0), c.x, c.y + r * Math.cos(t1), c.z + r * Math.sin(t1));
+      else pushSeg(circles, c.x + r * Math.cos(t0), c.y + r * Math.sin(t0), c.z, c.x + r * Math.cos(t1), c.y + r * Math.sin(t1), c.z);
+    }
+  }
+  return {
+    key,
+    size: { w, d, h },
+    face,
+    outer: lineGeo(circles),
+    inner: null,
+    all: lineGeo(circles, true),
+    cylinder: { a, b, r },
+    refs: 0,
+  };
+}
+
+/**
+ * Wall: an opaque plane (no thickness) in the local XZ plane at y = 0.
+ * Triangles in both windings so it masks from either side with single-sided materials.
+ */
+function buildWall(key: string, s: Size3): ItemGeometry {
+  const w = Math.max(s.w, 1), h = Math.max(s.h, 1);
+  const pos = new Float32Array([
+    0, 0, 0, w, 0, 0, w, 0, h,  0, 0, 0, w, 0, h, 0, 0, h,   // facing −Y
+    0, 0, 0, w, 0, h, w, 0, 0,  0, 0, 0, 0, 0, h, w, 0, h,   // facing +Y
+  ]);
+  const uv = new Float32Array([
+    0, 0, w, 0, w, h,  0, 0, w, h, 0, h,
+    0, 0, w, h, w, 0,  0, 0, 0, h, w, h,
+  ].map(v => v / 100));
+  const face = new THREE.BufferGeometry();
+  face.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  face.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  face.computeVertexNormals();
+  face.computeBoundingSphere();
+  const outer: number[] = [];
+  pushRect(outer, 0, 0, w, h, 0);
+  return { key, size: { w, d: 0, h }, face, outer: lineGeo(outer), inner: null, all: lineGeo(outer, true), refs: 0 };
 }
