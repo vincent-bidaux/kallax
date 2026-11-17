@@ -6,6 +6,7 @@
 //       ├ prepass  depth-only copy of the faces (transparency mode)
 //       ├ outer    outer silhouette edges
 //       ├ inner    cell-opening edges (Kallax)
+//       ├ fit      BRANÄS basket edges (Kallax with baskets)
 //       └ hidden   every edge, dashed, drawn only where occluded (transparency)
 import * as THREE from 'three';
 import { LineSegments2, LineMaterial } from './lines';
@@ -13,6 +14,8 @@ import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeome
 import { acquireGeometry, geometryKey, releaseGeometry, type ItemGeometry } from './item-geometry';
 import { MaterialLibrary, RO, type VisualState } from './materials';
 import { itemBox, localSize, worldSize } from '../core/kallax';
+import { effectiveFinish } from '../core/finishes';
+import { store } from '../core/store';
 import type { Item } from '../core/types';
 
 export class ItemView {
@@ -25,6 +28,7 @@ export class ItemView {
   readonly prepass: THREE.Mesh;
   readonly outer: LineSegments2;
   readonly inner: LineSegments2;
+  readonly fit: LineSegments2;
   readonly hidden: LineSegments2;
   /** Round beams: the two silhouette generators, rebuilt when the view changes. */
   readonly sil: LineSegments2;
@@ -32,6 +36,8 @@ export class ItemView {
   private silKey = '';
   state: VisualState = 'normal';
   private transformKey = '';
+  /** Finish / basket colours the current materials were picked for ('' = theme colours). */
+  private matKey = '';
 
   constructor(item: Item, readonly isGhost = false) {
     this.item = item;
@@ -40,13 +46,15 @@ export class ItemView {
     this.prepass = new THREE.Mesh(this.geo.face);
     this.outer = new LineSegments2(this.geo.outer);
     this.inner = new LineSegments2(this.geo.inner ?? this.geo.outer);
+    this.fit = new LineSegments2(this.geo.basket ?? this.geo.outer);
     this.hidden = new LineSegments2(this.geo.all);
     // The default materials created by the constructors are replaced right away.
-    for (const o of [this.face, this.prepass, this.outer, this.inner, this.hidden]) {
+    for (const o of [this.face, this.prepass, this.outer, this.inner, this.fit, this.hidden]) {
       (o.material as THREE.Material).dispose();
       this.content.add(o);
     }
     this.inner.visible = !!this.geo.inner;
+    this.fit.visible = !!this.geo.basket;
     this.sil = new LineSegments2(this.silGeo);
     (this.sil.material as THREE.Material).dispose();
     this.sil.visible = false;
@@ -75,6 +83,8 @@ export class ItemView {
       this.outer.geometry = this.geo.outer;
       this.inner.geometry = this.geo.inner ?? this.geo.outer;
       this.inner.visible = !!this.geo.inner;
+      this.fit.geometry = this.geo.basket ?? this.geo.outer;
+      this.fit.visible = !!this.geo.basket;
       this.hidden.geometry = this.geo.all;
       releaseGeometry(old);
     }
@@ -124,30 +134,53 @@ export class ItemView {
     this.silGeo.computeBoundingSphere();
   }
 
+  /** Finish colours wanted for this item with `lib` ('' = plain theme colours). */
+  private finishKey(lib: MaterialLibrary): string {
+    if (!lib.mode.finishColors || this.item.kind !== 'kallax') return '';
+    return `${effectiveFinish(this.item, store.doc.finish)}|${store.doc.basket ?? 'naturel'}`;
+  }
+
+  /** True when the item's finish (or the document's global finish / basket) changed since the last applyMaterials. */
+  needsMaterials(lib: MaterialLibrary): boolean { return this.finishKey(lib) !== this.matKey; }
+
   /** Assign shared materials for the current state / mode. */
   applyMaterials(lib: MaterialLibrary, state: VisualState) {
     this.state = state;
     const transp = lib.mode.transparency;
-    const faces = this.item.kind === 'block' ? lib.blockFace : lib.kallaxFace;
-    this.face.material = faces[state];
+    this.matKey = this.finishKey(lib);
+    const lines = lib.lines[state];
+    if (this.matKey && this.item.kind === 'kallax') {
+      // Frame (+ wooden fittings) in the finish colour, BRANÄS baskets in rattan (geometry group 1).
+      const fin = lib.kallaxFinish(effectiveFinish(this.item, store.doc.finish));
+      const bsk = lib.basket(store.doc.basket);
+      this.face.material = [fin.face[state], bsk.face[state]];
+      this.outer.material = fin.lines[state].outer;
+      this.inner.material = fin.lines[state].inner;
+      this.fit.material = bsk.lines[state].inner;
+    } else {
+      this.face.material = (this.item.kind === 'block' ? lib.blockFace : lib.kallaxFace)[state];
+      this.outer.material = lines.outer;
+      this.inner.material = lines.inner;
+      this.fit.material = lines.inner;
+    }
     this.prepass.material = lib.prepass;
-    this.outer.material = lib.lines[state].outer;
-    this.inner.material = lib.lines[state].inner;
     this.hidden.material = lib.hidden;
-    this.sil.material = lib.lines[state].outer;
+    this.sil.material = lines.outer;
     this.sil.renderOrder = state !== 'normal' ? RO.line + 0.5 : RO.line;
 
     this.prepass.visible = transp;
     this.hidden.visible = transp;
     this.inner.visible = !!this.geo.inner;
+    this.fit.visible = !!this.geo.basket;
 
     this.prepass.renderOrder = RO.prepass;
     this.face.renderOrder = RO.face;
     this.outer.renderOrder = RO.line;
     this.inner.renderOrder = RO.line;
+    this.fit.renderOrder = RO.line;
     this.hidden.renderOrder = RO.hidden;
     // Selected / hovered edges win over neighbours' coincident edges.
-    if (state !== 'normal') { this.outer.renderOrder = RO.line + 0.5; this.inner.renderOrder = RO.line + 0.5; }
+    if (state !== 'normal') { this.outer.renderOrder = RO.line + 0.5; this.inner.renderOrder = RO.line + 0.5; this.fit.renderOrder = RO.line + 0.5; }
   }
 
   applyGhostMaterials(lib: MaterialLibrary, valid: boolean) {
@@ -156,16 +189,19 @@ export class ItemView {
     this.prepass.material = g.prepass;
     this.outer.material = g.outer;
     this.inner.material = g.inner;
+    this.fit.material = g.inner;
     this.hidden.material = g.hidden;
     this.sil.material = g.outer;
     this.sil.renderOrder = RO.ghostLine;
     this.prepass.visible = true;
     this.hidden.visible = true;
     this.inner.visible = !!this.geo.inner;
+    this.fit.visible = !!this.geo.basket;
     this.prepass.renderOrder = RO.ghostPrepass;
     this.face.renderOrder = RO.ghostFace;
     this.outer.renderOrder = RO.ghostLine;
     this.inner.renderOrder = RO.ghostLine;
+    this.fit.renderOrder = RO.ghostLine;
     this.hidden.renderOrder = RO.ghostHidden;
     this.face.castShadow = false;
   }

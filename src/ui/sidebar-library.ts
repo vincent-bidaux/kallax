@@ -7,6 +7,7 @@ import type { BlockItem, Item, KallaxItem } from '../core/types';
 import { h, svg } from './dom';
 import { numberField, segmented, textField, tip } from './controls';
 import { icon } from './icons';
+import { INSERT_NAMES, fmtEur, frameMinPrice, insertMinPrice } from '../core/finishes';
 import { beginLibraryDrag } from '../interaction/drag-drop';
 import { freeSpot } from '../interaction/placement';
 import { ui } from '../interaction/context';
@@ -71,17 +72,21 @@ export function buildLibrary(host: HTMLElement) {
   const tiles: { el: HTMLElement; entry: CatalogEntry }[] = [];
   for (const e of CATALOG) {
     const dims = `${fmtCm(e.exact.w)} × ${fmtCm(e.exact.d)} × ${fmtCm(e.exact.h)} cm`;
+    const min = frameMinPrice(e.cols, e.rows);
+    const price = min != null ? `dès ${fmtEur(min)}` : null;
     const el = h('div', {
       class: `lib-tile ${e.official ? 'official' : 'custom'}`, role: 'listitem button', tabindex: '0',
-      'aria-label': `Kallax ${e.label}, ${e.nominal}${e.official ? ', format IKEA' : ', sur mesure'}. Glisser dans la vue ou Entrée pour ajouter.`,
+      'aria-label': `Kallax ${e.label}, ${e.nominal}${price ? `, format IKEA ${price}` : ', sur mesure'}. Glisser dans la vue ou Entrée pour ajouter.`,
     },
       h('div', { class: 'tile-art' }, kallaxElevationSVG(e.cols, e.rows)),
       h('div', { class: 'tile-label' }, e.label,
         e.official ? h('span', { class: 'badge-ikea', 'aria-hidden': 'true' }, 'IKEA') : null),
       h('div', { class: 'tile-sub' }, e.nominal.replace(' cm', '')),
+      h('div', { class: `tile-price${price ? '' : ' custom'}`, 'aria-hidden': 'true' },
+        price ? [h('span', { class: 'tp-from' }, 'dès '), fmtEur(min!)] : 'sur mesure'),
     );
-    tip(el, e.official
-      ? `KALLAX ${e.label} · format vendu par IKEA — ${dims}`
+    tip(el, price
+      ? `KALLAX ${e.label} · ${dims} — ${price}`
       : `Sur mesure · combinaison non vendue d’un seul tenant — ${dims}`);
     el.addEventListener('pointerdown', (ev) => beginLibraryDrag(ev, el, () => makeKallax(e), `Kallax ${e.label}`));
     el.addEventListener('keydown', (ev) => {
@@ -109,12 +114,17 @@ export function buildLibrary(host: HTMLElement) {
     h('p', { class: 'hint' }, icon('cursor', 12), 'Glissez un format dans la vue, ou cliquez pour l’ajouter.'));
 
   // ── HABILLAGE (cell fittings tool) ──
-  const TOOLS: { id: InsertTool; label: string; icon: string; tip: string }[] = [
-    ...(Object.keys(INSERTS) as InsertType[]).map(k => ({ id: k as InsertTool, label: INSERTS[k].label, icon: INSERTS[k].icon, tip: INSERTS[k].product })),
+  const TOOLS: { id: InsertTool; label: string; icon: string; tip: string; price?: number }[] = [
+    ...(Object.keys(INSERTS) as InsertType[]).map(k => ({
+      id: k as InsertTool, label: INSERTS[k].label, icon: INSERTS[k].icon, price: insertMinPrice(k),
+      tip: `${INSERT_NAMES[k]} ${k === 'basket' ? '33×38×33' : '33×33'} · dès ${fmtEur(insertMinPrice(k))}`,
+    })),
     { id: 'erase', label: 'Retirer', icon: 'eraser', tip: 'Retirer l’habillage d’une case' },
   ];
   const toolBtns = TOOLS.map(t => {
-    const el = h('button', { type: 'button', class: 'obj-type tool-btn', 'aria-pressed': 'false', 'aria-label': t.label }, icon(t.icon, 20), h('span', null, t.label));
+    const el = h('button', { type: 'button', class: 'obj-type tool-btn', 'aria-pressed': 'false', 'aria-label': t.price != null ? `${t.label}, dès ${fmtEur(t.price)}` : t.label },
+      icon(t.icon, 20), h('span', null, t.label),
+      h('small', { class: 'tool-price', 'aria-hidden': 'true' }, t.price != null ? fmtEur(t.price).replace(',00 €', ' €') : '\u00a0'));
     tip(el, `${t.tip} — puis cliquez dans une case`);
     el.addEventListener('click', () => ui.setInsertTool(ui.insertTool === t.id ? null : t.id));
     return { el, t };

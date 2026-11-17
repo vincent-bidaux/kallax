@@ -156,7 +156,7 @@ import type { InsertType } from './types';
 export const INSERTS: Record<InsertType, { label: string; product: string; icon: string }> = {
   door: { label: 'Porte', product: 'KALLAX bloc porte 33×33', icon: 'insertDoor' },
   drawers: { label: '2 tiroirs', product: 'KALLAX bloc 2 tiroirs 33×33', icon: 'insertDrawers' },
-  basket: { label: 'Panier', product: 'Boîte / panier 33×38×33 (DRÖNA…)', icon: 'insertBasket' },
+  basket: { label: 'Panier', product: 'BRANÄS panier rotin 33×38×33', icon: 'insertBasket' },
   shelf: { label: 'Séparation', product: 'KALLAX insert 1 étagère 33×33', icon: 'insertShelf' },
 };
 /** Valid fittings of a unit (ignores cells outside the current cols × rows). */

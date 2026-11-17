@@ -3,9 +3,30 @@
 import * as THREE from 'three';
 import type { ThemeTokens } from '../core/theme';
 import { makeLineMaterial, disposeLineMaterial, LineMaterial } from './lines';
+import { FINISH_BY_ID, type BasketVariant, type FinishId } from '../core/finishes';
 
 export type VisualState = 'normal' | 'hover' | 'select';
-export interface RenderMode { shadows: boolean; transparency: boolean }
+export interface RenderMode {
+  shadows: boolean;
+  transparency: boolean;
+  /** "Couleurs des finitions": KALLAX faces / edges take their finish colours. */
+  finishColors: boolean;
+}
+
+/** Per-finish KALLAX materials ("Couleurs des finitions"). */
+export interface FinishMaterials {
+  face: Record<VisualState, THREE.Material>;
+  lines: Record<VisualState, LinePair>;
+}
+
+/** Face opacity of finish-coloured faces in transparency (a bit more than the plain fill, to keep the tone). */
+const FINISH_TRANSLUCENT = 0.36;
+
+/** BRANÄS rattan tones. */
+const BASKET_COLORS: Record<BasketVariant, { color: string; line: string }> = {
+  naturel: { color: '#c8a26a', line: '#6a4f2a' },
+  blanc: { color: '#f1efe9', line: '#7a776f' },
+};
 
 /** Render order (within the opaque and transparent lists three.js keeps). */
 export const RO = {
@@ -101,6 +122,7 @@ export class MaterialLibrary {
   readonly hidden: LineMaterial;
   readonly ghost: Record<'ok' | 'bad', GhostMaterials>;
 
+  private finishSets = new Map<string, FinishMaterials>();
   private meshMats: THREE.Material[] = [];
   private lineMats: LineMaterial[] = [];
   private dashed: LineMaterial[] = [];
@@ -170,15 +192,69 @@ export class MaterialLibrary {
     this.ghost = { ok: ghost(t.ghostOk), bad: ghost(t.ghostBad) };
   }
 
+  /** KALLAX materials in a finish's colours (lazily created, cached until the library is disposed). */
+  kallaxFinish(id: FinishId): FinishMaterials {
+    const f = FINISH_BY_ID[id] ?? FINISH_BY_ID.blanc;
+    return this.colourSet(`f:${f.id}`, f.color, f.line);
+  }
+
+  /** BRANÄS basket materials (rattan tone of the chosen variant). */
+  basket(variant: BasketVariant | undefined): FinishMaterials {
+    const b = BASKET_COLORS[variant ?? 'naturel'] ?? BASKET_COLORS.naturel;
+    return this.colourSet(`b:${variant ?? 'naturel'}`, b.color, b.line);
+  }
+
+  private colourSet(key: string, color: string, line: string): FinishMaterials {
+    const hit = this.finishSets.get(key);
+    if (hit) return hit;
+    const t = this.theme, W = this.theme.widths;
+    const base = finishFaceColor(t, color, this.mode);
+    const edge = finishLineColor(t, line, color, this.mode, true);
+    const edgeIn = finishLineColor(t, line, color, this.mode, false);
+    // Light tints, mixed in sRGB (a linear mix would turn dark finishes into
+    // another wood): the selected unit keeps reading as its own finish.
+    const tint = (c: string, k: number) => {
+      const a = base.getRGB({ r: 0, g: 0, b: 0 }, THREE.SRGBColorSpace);
+      const b = new THREE.Color(c).getRGB({ r: 0, g: 0, b: 0 }, THREE.SRGBColorSpace);
+      return new THREE.Color().setRGB(a.r + (b.r - a.r) * k, a.g + (b.g - a.g) * k, a.b + (b.b - a.b) * k, THREE.SRGBColorSpace);
+    };
+    // Hover / select edges keep the theme's hue, darkened just enough to read on light finishes.
+    const ref = new THREE.Color(color);
+    const sel = legibleOn(new THREE.Color(t.select), ref), hov = legibleOn(new THREE.Color(t.hover), ref);
+    const set: FinishMaterials = {
+      face: {
+        normal: this.face(base, null, 0, FINISH_TRANSLUCENT),
+        hover: this.face(tint(t.hover, 0.05), null, 0, FINISH_TRANSLUCENT),
+        select: this.face(tint(t.select, 0.1), null, 0, FINISH_TRANSLUCENT),
+      },
+      lines: {
+        normal: {
+          outer: this.line({ color: edge.getStyle(), width: W.model }),
+          inner: this.line({ color: edgeIn.getStyle(), width: W.modelInner, opacity: 0.9 }),
+        },
+        hover: {
+          outer: this.line({ color: hov.getStyle(), width: W.model + 0.4 }),
+          inner: this.line({ color: mixColor(edgeIn, hov, 0.6).getStyle(), width: W.modelInner }),
+        },
+        select: {
+          outer: this.line({ color: sel.getStyle(), width: W.select }),
+          inner: this.line({ color: mixColor(edgeIn, sel, 0.8).getStyle(), width: W.modelInner + 0.4 }),
+        },
+      },
+    };
+    this.finishSets.set(key, set);
+    return set;
+  }
+
   private track<M extends THREE.Material>(m: M): M { this.meshMats.push(m); return m; }
 
-  private face(color: THREE.Color, hatch: THREE.Color | null, hatchAlpha: number): THREE.Material {
+  private face(color: THREE.Color, hatch: THREE.Color | null, hatchAlpha: number, translucentOpacity = 0.2): THREE.Material {
     const transp = this.mode.transparency;
     const params = {
       color,
       polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
       transparent: transp,
-      opacity: transp ? 0.2 : 1,
+      opacity: transp ? translucentOpacity : 1,
       depthWrite: !transp,
     };
     const m = this.mode.shadows ? new THREE.MeshLambertMaterial(params) : new THREE.MeshBasicMaterial(params);
@@ -212,5 +288,63 @@ export class MaterialLibrary {
     for (const m of this.meshMats) m.dispose();
     for (const m of this.lineMats) disposeLineMaterial(m);
     this.meshMats = []; this.lineMats = []; this.dashed = [];
+    this.finishSets.clear();
   }
+}
+
+/** WCAG relative luminance / contrast ratio (THREE.Color components are already linear sRGB). */
+function luminance(c: THREE.Color): number {
+  return 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+}
+function contrast(a: THREE.Color, b: THREE.Color): number {
+  const la = luminance(a), lb = luminance(b);
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+
+/**
+ * `c` made legible on the face colour `on`: darkened (same hue) on light
+ * finishes, lightened on dark ones, until the contrast ratio reaches `min`
+ * (low on purpose: the saturated select / hover hue also helps).
+ */
+function legibleOn(c: THREE.Color, on: THREE.Color, min = 1.6): THREE.Color {
+  const white = new THREE.Color(1, 1, 1);
+  const darken = luminance(on) > 0.3;
+  for (let i = 0; i < 14 && contrast(c, on) < min; i++) {
+    if (darken) c.offsetHSL(0, 0.02, -0.035); else c.lerp(white, 0.12);
+  }
+  return c;
+}
+
+/**
+ * Face colour of a finish for the current theme / mode. Slightly muted towards
+ * the drawing background so the plan keeps reading as a drawing (white units
+ * do not glare on the blueprint). With "Ombrage" the colour is pre-brightened:
+ * the hemisphere + key light rig (tuned for the blueprint fill) would otherwise
+ * render every finish ~30 % too dark — fronts now read close to the real tone,
+ * tops lighter, sides darker.
+ */
+function finishFaceColor(t: ThemeTokens, color: string, mode: RenderMode): THREE.Color {
+  const c = new THREE.Color(color);
+  c.lerp(new THREE.Color(t.bg), t.name === 'blueprint' ? 0.1 : 0.04);
+  if (mode.shadows && !mode.transparency) c.multiplyScalar(1.45);
+  return c;
+}
+
+/**
+ * Edge colour of a finish. Normally its `line` tone (contrasts with the face).
+ * - Transparency: faces nearly vanish, so edges sit on the background: take
+ *   whichever of the face / line tones stands out more from it (keeps the hue
+ *   on the blueprint: white and oak edges, light edges for dark brown units).
+ * - Light edges on a dark unit over a light background (paper): darken them a
+ *   little so the silhouette stays crisp.
+ */
+function finishLineColor(t: ThemeTokens, line: string, face: string, mode: RenderMode, outer: boolean): THREE.Color {
+  const bg = new THREE.Color(t.bg);
+  const l = new THREE.Color(line), f = new THREE.Color(face);
+  if (mode.transparency) {
+    const pick = contrast(f, bg) >= contrast(l, bg) ? f : l;
+    return pick.lerp(new THREE.Color(t.line), 0.12);
+  }
+  if (outer && luminance(l) > luminance(f) && contrast(l, bg) < 2) l.lerp(new THREE.Color(t.line), 0.25);
+  return l;
 }

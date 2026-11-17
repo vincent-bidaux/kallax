@@ -18,7 +18,9 @@ Concepteur de meubles à base d'étagères IKEA **KALLAX**, rendu « plan d'arch
 - Rendus : vectoriel clean (lignes cachées masquées), ombrage des faces, transparence (arêtes cachées en pointillés discrets)
 - Thèmes « Plan d'architecte » (fond bleu) et « Papier »
 - Projets (enregistrer, ouvrir, nouveau, dupliquer), calques, undo/redo, export/import JSON, export PNG
-- Option piètement IKEA sur les Kallax
+- Option piètement IKEA sur les Kallax (2×2, 2×4, 4×3 couché, 4×4)
+- Finitions (blanc, blanc brillant, brun noir, chêne blanchi, chêne, noyer, gris) : choix global + par étagère, rendu « Couleurs des finitions »
+- Prix IKEA France (nov. 2026) : « dès … » dans la bibliothèque, liste de courses chiffrée, total de la composition
 
 ## Dimensions exactes utilisées
 

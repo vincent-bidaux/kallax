@@ -55,6 +55,7 @@ const P: Record<string, string> = {
   arrowBack: '<path d="M6 18 18 6M10 6h8v8"/>',
   check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
   sparkles: '<path d="M12 3.5 13.6 9l5.4 1.6-5.4 1.6L12 17.5l-1.6-5.3L5 10.6 10.4 9z"/><path d="M19 15.5v4M17 17.5h4"/>',
+  swatch: '<rect x="3.5" y="3.5" width="7.5" height="17" rx="2"/><circle cx="7.25" cy="16.5" r="1" fill="currentColor" stroke="none"/><path d="M11 8.6 15.3 4.3a1.5 1.5 0 0 1 2.1 0l2.3 2.3a1.5 1.5 0 0 1 0 2.1L11 17.4"/><path d="M11 20.5h7.5a2 2 0 0 0 2-2V14a2 2 0 0 0-2-2h-2.2"/>',
   shadow: '<circle cx="10" cy="9" r="5"/><ellipse cx="13" cy="19" rx="7" ry="1.8"/>',
   transparency: '<rect x="3.5" y="3.5" width="11" height="11" rx="2"/><rect x="9.5" y="9.5" width="11" height="11" rx="2" stroke-dasharray="2 2.2"/>',
   warning: '<path d="M10.3 4.3a2 2 0 0 1 3.4 0l7.4 12.8a2 2 0 0 1-1.7 3H4.6a2 2 0 0 1-1.7-3z"/><path d="M12 9.5v4"/><circle cx="12" cy="16.6" r=".6" fill="currentColor"/>',

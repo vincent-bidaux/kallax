@@ -26,6 +26,8 @@ export interface ItemGeometry {
   outer: LineSegmentsGeometry;
   /** Cell openings (Kallax only). */
   inner: LineSegmentsGeometry | null;
+  /** BRANÄS basket edges (Kallax with baskets), drawn apart so they can take the rattan tone. */
+  basket: LineSegmentsGeometry | null;
   /** Every edge, with line distances (for dashed hidden edges). */
   all: LineSegmentsGeometry;
   refs: number;
@@ -67,6 +69,7 @@ export function releaseGeometry(g: ItemGeometry) {
   g.face.dispose();
   g.outer.dispose();
   g.inner?.dispose();
+  g.basket?.dispose();
   g.all.dispose();
 }
 
@@ -225,7 +228,9 @@ function buildKallax(key: string, cols: number, rows: number, legs: boolean, ins
   face.translate(0, D, L);
   face.computeVertexNormals();
   let legEdges: number[] = [];
+  const basketEdges: number[] = [];
   const extraFaces: THREE.BufferGeometry[] = [];
+  const basketFaces: THREE.BufferGeometry[] = [];
   if (legs) {
     const u = underframe(W, D, L);
     legEdges = u.edges;
@@ -236,13 +241,30 @@ function buildKallax(key: string, cols: number, rows: number, legs: boolean, ins
     const cell = cells[i];
     if (!cell) continue;
     const f = insertGeometry(t, cell[0], cell[1] + L, cell[2], cell[3] + L, D);
-    extraFaces.push(...f.faces);
-    legEdges.push(...f.edges);
+    (t === 'basket' ? basketFaces : extraFaces).push(...f.faces);
+    (t === 'basket' ? basketEdges : legEdges).push(...f.edges);
   }
-  if (extraFaces.length) {
-    const parts = [face.index ? face.toNonIndexed() : face, ...extraFaces];
-    for (const p of parts) for (const name of Object.keys(p.attributes)) if (name !== 'position' && name !== 'normal') p.deleteAttribute(name);
-    face = mergeGeometries(parts) ?? face;
+  // Material groups (used by the "Couleurs des finitions" mode, ignored with a
+  // single material): 0 = frame + wooden fittings + underframe, 1 = baskets.
+  const strip = (p: THREE.BufferGeometry) => {
+    const g = p.index ? p.toNonIndexed() : p;
+    for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'normal') g.deleteAttribute(name);
+    g.clearGroups();
+    return g;
+  };
+  if (extraFaces.length) face = mergeGeometries([face, ...extraFaces].map(strip)) ?? face;
+  face.clearGroups();
+  if (basketFaces.length) {
+    const frameCount = face.getAttribute('position').count;
+    const merged = mergeGeometries([strip(face), ...basketFaces.map(strip)]);
+    if (merged) {
+      face = merged;
+      face.clearGroups();
+      face.addGroup(0, frameCount, 0);
+      face.addGroup(frameCount, face.getAttribute('position').count - frameCount, 1);
+    }
+  } else {
+    face.addGroup(0, face.getAttribute('position').count, 0);
   }
   face.computeBoundingBox();
   face.computeBoundingSphere();
@@ -259,7 +281,8 @@ function buildKallax(key: string, cols: number, rows: number, legs: boolean, ins
     face,
     outer: lineGeo(outer),
     inner: lineGeo(inner),
-    all: lineGeo([...outer, ...inner], true),
+    basket: basketEdges.length ? lineGeo(basketEdges) : null,
+    all: lineGeo([...outer, ...inner, ...basketEdges], true),
     refs: 0,
   };
 }
@@ -277,6 +300,7 @@ function buildBlock(key: string, s: Size3): ItemGeometry {
     face,
     outer: lineGeo(outer),
     inner: null,
+    basket: null,
     all: lineGeo(outer, true),
     refs: 0,
   };
@@ -312,6 +336,7 @@ function buildCylinder(key: string, s: Size3, axis: 'x' | 'z'): ItemGeometry {
     face,
     outer: lineGeo(circles),
     inner: null,
+    basket: null,
     all: lineGeo(circles, true),
     cylinder: { a, b, r },
     refs: 0,
@@ -339,7 +364,7 @@ function buildWall(key: string, s: Size3): ItemGeometry {
   face.computeBoundingSphere();
   const outer: number[] = [];
   pushRect(outer, 0, 0, w, h, 0);
-  return { key, size: { w, d: 0, h }, face, outer: lineGeo(outer), inner: null, all: lineGeo(outer, true), refs: 0 };
+  return { key, size: { w, d: 0, h }, face, outer: lineGeo(outer), inner: null, basket: null, all: lineGeo(outer, true), refs: 0 };
 }
 
 /**
@@ -381,5 +406,5 @@ function buildWindow(key: string, s: Size3): ItemGeometry {
     pushSeg(inner, cx, gy, cz, cx + k * 0.18, gy, cz + k * 0.18);
     pushSeg(inner, cx + k * 0.08, gy, cz - k * 0.06, cx + k * 0.3, gy, cz + k * 0.16);
   }
-  return { key, size: { w, d, h }, face, outer: lineGeo(outer), inner: lineGeo(inner), all: lineGeo([...outer, ...inner], true), refs: 0 };
+  return { key, size: { w, d, h }, face, outer: lineGeo(outer), inner: lineGeo(inner), basket: null, all: lineGeo([...outer, ...inner], true), refs: 0 };
 }

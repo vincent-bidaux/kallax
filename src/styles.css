@@ -1164,3 +1164,181 @@ html.theme-paper .rot-ax.ax-z { color: #0090ff; }
 .obj-params .chips { margin: 0; }
 .tool-hint.active { color: var(--accent-text); }
 .tool-btn.on { background: var(--accent); color: var(--text-on-accent); box-shadow: none; }
+
+/* ── prices: library ──────────────────────────────────────── */
+.tile-price {
+  margin-top: 3px;
+  font: 600 10.5px/1.2 var(--font);
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  letter-spacing: -.01em;
+}
+.tile-price .tp-from { font-weight: 400; color: var(--text-3); }
+.tile-price.custom { font-weight: 500; font-style: italic; color: var(--text-3); letter-spacing: 0; }
+.tool-price {
+  margin-top: -2px;
+  font: 500 9px/1 var(--font);
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.tool-btn.on .tool-price { color: rgba(255, 255, 255, .75); }
+
+/* ── finish picker ────────────────────────────────────────── */
+:root { --swatch-ring: rgba(255, 255, 255, .2); --swatch-ring-light: rgba(0, 0, 0, .28); --total-bg: rgba(30, 30, 33, .84); }
+:root.theme-paper { --swatch-ring: rgba(0, 0, 0, .16); --swatch-ring-light: rgba(0, 0, 0, .2); --total-bg: rgba(246, 246, 249, .84); }
+.finish-head { margin-bottom: 8px; }
+.finish-current {
+  font-size: 11.5px; font-weight: 500; color: var(--text);
+  max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.finish-current .finish-sub { color: var(--text-3); font-weight: 400; }
+.finish-current.na { color: var(--warning); }
+:root.theme-paper .finish-current.na { color: #946200; }
+.finish-swatches {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 9px;
+  padding: 2px 2px 0;
+}
+.swatch {
+  position: relative;
+  width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%;
+  background: var(--sw);
+  box-shadow: inset 0 0 0 .5px var(--swatch-ring), 0 1px 2px rgba(0, 0, 0, .22);
+  outline: 2px solid transparent; outline-offset: 2px;
+  transition: outline-color var(--t-fast) ease, transform var(--t-fast) var(--ease), opacity var(--t-fast) ease;
+}
+/* light faces need a darker hairline */
+.swatch.sw-blanc, .swatch.sw-blanc-brillant, .swatch.sw-chene-blanchi { box-shadow: inset 0 0 0 .5px var(--swatch-ring-light), 0 1px 2px rgba(0, 0, 0, .18); }
+/* gloss and grain, subtle */
+.swatch.sw-blanc-brillant { background: radial-gradient(circle at 34% 28%, #fff 0 22%, transparent 48%), linear-gradient(160deg, #fff, #e6e7ea); }
+.swatch.sw-chene, .swatch.sw-chene-blanchi, .swatch.sw-noyer {
+  background:
+    repeating-linear-gradient(100deg, rgba(0, 0, 0, .07) 0 1px, transparent 1px 4px, rgba(255, 255, 255, .06) 4px 5px, transparent 5px 7px),
+    var(--sw);
+}
+.swatch:hover:not(:disabled) { transform: scale(1.08); }
+.swatch:active:not(:disabled) { transform: scale(.94); }
+.swatch.on { outline-color: var(--accent); }
+.swatch.inherited { outline: 1.5px dashed var(--text-3); outline-offset: 2px; }
+.swatch.na { opacity: .4; }
+.swatch.na::after {
+  content: ""; position: absolute; left: 50%; top: 3px; bottom: 3px; width: 1.5px; margin-left: -.75px;
+  background: var(--text-2); transform: rotate(45deg); border-radius: 1px;
+}
+.swatch.na.on, .swatch.na.inherited { opacity: .7; }
+.swatch:focus-visible { outline-color: var(--accent); box-shadow: var(--focus); }
+.swatch:disabled { opacity: .35; }
+.finish-global {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 26px; padding: 0 10px 0 5px;
+  margin-right: 1px;
+  font-variant-numeric: tabular-nums;
+}
+.finish-global.on { box-shadow: inset 0 0 0 1px var(--accent); }
+.finish-global:disabled { opacity: .45; }
+.finish-dot {
+  width: 16px; height: 16px; border-radius: 50%;
+  background: var(--sw);
+  box-shadow: inset 0 0 0 .5px var(--swatch-ring-light);
+}
+.finish-global-row { margin-bottom: 10px; }
+.finish-hint { margin-top: 8px; }
+.basket-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin-top: 12px; min-height: 26px;
+}
+.basket-label { padding-left: 2px; font-size: 12px; color: var(--text-2); }
+.basket-seg { width: 140px; }
+
+/* ── price card (single / multi selection) ────────────────── */
+.price-host:empty { display: none; }
+.price-card {
+  margin-top: 8px; padding: 9px 12px 9px;
+  border-radius: var(--r);
+  background: var(--card);
+  box-shadow: inset 0 0 0 .5px var(--card-border);
+}
+.price-main { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.price-k { font-size: 11px; font-weight: 600; color: var(--text-2); }
+.price-v {
+  font: 600 17px/1.15 var(--font-display); letter-spacing: -.02em;
+  font-variant-numeric: tabular-nums;
+}
+.price-v.none { color: var(--text-3); font-weight: 400; }
+.price-break { margin-top: 3px; font-size: 11px; line-height: 1.35; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.price-note, .bom-note {
+  display: flex; align-items: flex-start; gap: 5px;
+  margin-top: 5px;
+  font-size: 11px; line-height: 1.3; font-weight: 500;
+  color: var(--warning);
+}
+.price-note svg, .bom-note svg { margin-top: 1px; flex: none; }
+:root.theme-paper .price-note, :root.theme-paper .bom-note { color: #946200; }
+
+/* ── BOM (Composition panel) ──────────────────────────────── */
+.bom-list li.bom-row {
+  display: grid; grid-template-columns: 22px minmax(0, 1fr) auto;
+  column-gap: 9px; row-gap: 0; align-items: start; padding: 8px 12px;
+}
+.bom-row .qty { padding-top: 2px; min-width: 0; }
+.bom-row .bom-note { grid-column: 2 / -1; }
+.bom-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.bom-label { font-weight: 500; }
+.bom-detail { font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.bom-note { margin-top: 3px; font-weight: 400; }
+.bom-price { flex: none; display: flex; flex-direction: column; align-items: flex-end; text-align: right; }
+.bom-total { font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.bom-unit { font-size: 10.5px; color: var(--text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bom-row.unpriced .bom-total { color: var(--text-3); font-weight: 400; }
+.bom-row.kind-legs .bom-label, .bom-row.kind-insert .bom-label { font-weight: 400; }
+.bom-group { scroll-margin: 10px 0 104px; }
+.bom-group.flash .bom-list { animation: bom-flash 900ms var(--ease-out); }
+@keyframes bom-flash {
+  0% { box-shadow: inset 0 0 0 .5px var(--card-border), 0 0 0 3px var(--accent-soft); }
+  100% { box-shadow: inset 0 0 0 .5px var(--card-border), 0 0 0 3px transparent; }
+}
+
+/* ── pinned total (bottom of the inspector) ───────────────── */
+.inspector { position: relative; }
+.insp-scroll { padding-bottom: 96px; }
+.insp-total {
+  position: absolute; left: 0; bottom: 0;
+  padding: 8px 10px 9px;
+  background: var(--total-bg);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(24px) saturate(180%);
+  box-shadow: inset 0 .5px 0 var(--sep-strong);
+  z-index: 2;
+}
+.total-card {
+  display: flex; flex-direction: column; gap: 1px; width: 100%;
+  padding: 7px 8px 7px 10px;
+  border: 0; border-radius: var(--r);
+  background: transparent;
+  text-align: left;
+  transition: background-color var(--t-fast) ease;
+}
+.total-card:hover { background: var(--fill-1); }
+.total-card:active { background: var(--fill-2); }
+.total-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; width: 100%; }
+.total-label { font: 600 13px/1.2 var(--font-display); color: var(--text-2); letter-spacing: -.005em; }
+.total-amount {
+  font: 600 24px/1.1 var(--font-display); letter-spacing: -.025em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.total-amount.bump { animation: total-bump 420ms var(--ease-out); }
+@keyframes total-bump {
+  0% { opacity: .35; transform: translateY(3px); }
+  100% { opacity: 1; transform: none; }
+}
+.total-row-sub { align-items: center; }
+.total-sub { font-size: 11.5px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.total-go {
+  display: inline-flex; align-items: center; gap: 2px;
+  font-size: 11px; color: var(--text-3);
+  opacity: 0; transition: opacity var(--t-fast) ease;
+}
+.total-card:hover .total-go, .total-card:focus-visible .total-go { opacity: 1; color: var(--accent-text); }
+.total-source { margin: 2px 10px 0; font-size: 10.5px; color: var(--text-3); letter-spacing: 0; }

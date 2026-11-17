@@ -97,6 +97,7 @@ export function buildToolbar(host: HTMLElement, hooks: ToolbarHooks) {
   });
   const swShadows = switchRow({ label: 'Ombrage', hint: 'Faces ombrées selon leur orientation', icon: 'shadow', value: store.settings.shadows, onChange: v => store.setSettings({ shadows: v }) });
   const swTransp = switchRow({ label: 'Transparence', hint: 'Arêtes cachées en pointillés', icon: 'transparency', value: store.settings.transparency, onChange: v => store.setSettings({ transparency: v }) });
+  const swFinish = switchRow({ label: 'Couleurs des finitions', hint: 'Teinte réelle des étagères', icon: 'swatch', value: store.settings.finishColors, onChange: v => store.setSettings({ finishColors: v }) });
   const angleSeg = segmented<number>({
     ariaLabel: 'Angle des fuyantes', size: 'sm', value: store.settings.cavalierAngle,
     options: [30, 45, 60].map(a => ({ value: a, label: `${a}°` })),
@@ -109,7 +110,7 @@ export function buildToolbar(host: HTMLElement, hooks: ToolbarHooks) {
   });
   rendu.body.append(
     h('div', { class: 'pop-label' }, 'Thème'), themeSeg.el,
-    h('div', { class: 'group' }, swShadows.el, swTransp.el),
+    h('div', { class: 'group' }, swShadows.el, swTransp.el, swFinish.el),
     h('div', { class: 'pop-label' }, 'Perspective cavalière'),
     h('div', { class: 'group' },
       h('div', { class: 'row' }, h('span', { class: 'row-label' }, h('span', { class: 'row-text' }, 'Angle')), angleSeg.el),
@@ -169,7 +170,7 @@ export function buildToolbar(host: HTMLElement, hooks: ToolbarHooks) {
     projSeg.setDisabled(s.view === 'cavalier');
     projSeg.el.title = s.view === 'cavalier' ? 'La cavalière est toujours une projection oblique orthographique' : '';
     swItems.set(s.measureItems); swGlobal.set(s.measureGlobal);
-    themeSeg.set(s.theme); swShadows.set(s.shadows); swTransp.set(s.transparency);
+    themeSeg.set(s.theme); swShadows.set(s.shadows); swTransp.set(s.transparency); swFinish.set(s.finishColors);
     angleSeg.set(s.cavalierAngle); ratioSeg.set(s.cavalierRatio);
     stepSeg.set(s.gridCell); swSnapGrid.set(s.snapGrid); swSnapItems.set(s.snapItems);
     swShowGrid.set(s.showGrid); swAxes.set(s.showAxes);

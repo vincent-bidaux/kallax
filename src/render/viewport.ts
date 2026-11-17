@@ -216,7 +216,7 @@ export class Viewport implements ViewportAPI {
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
     // ── materials, items ────────────────────────────────────
-    this.mats = new MaterialLibrary(this.theme, { shadows: s.shadows, transparency: s.transparency });
+    this.mats = new MaterialLibrary(this.theme, { shadows: s.shadows, transparency: s.transparency, finishColors: s.finishColors });
     this.applyModeFlags();
     this.applyBackground();
     this.syncItems();
@@ -771,7 +771,7 @@ export class Viewport implements ViewportAPI {
     const prev = this.lastSettings;
     this.lastSettings = { ...s };
 
-    if (s.theme !== prev.theme || s.shadows !== prev.shadows || s.transparency !== prev.transparency) {
+    if (s.theme !== prev.theme || s.shadows !== prev.shadows || s.transparency !== prev.transparency || s.finishColors !== prev.finishColors) {
       this.applyMode(s.theme !== prev.theme);
     }
     if (s.gridCell !== prev.gridCell) this.ground.setCell(s.gridCell);
@@ -808,7 +808,7 @@ export class Viewport implements ViewportAPI {
     const s = store.settings;
     this.theme = THEMES[s.theme];
     const old = this.mats;
-    this.mats = new MaterialLibrary(this.theme, { shadows: s.shadows, transparency: s.transparency });
+    this.mats = new MaterialLibrary(this.theme, { shadows: s.shadows, transparency: s.transparency, finishColors: s.finishColors });
     for (const v of this.views.values()) v.applyMaterials(this.mats, v.state);
     if (this.ghost) this.ghost.applyGhostMaterials(this.mats, this.ghostValid);
     old.dispose();
@@ -848,7 +848,8 @@ export class Viewport implements ViewportAPI {
       } else {
         const kindBefore = v.item.kind;
         v.setItem(it);
-        if (v.item.kind !== kindBefore) v.applyMaterials(this.mats, v.state);
+        // Kind change, or finish colours to update (item / global finish, basket variant).
+        if (v.item.kind !== kindBefore || v.needsMaterials(this.mats)) v.applyMaterials(this.mats, v.state);
       }
     }
     for (const [id, v] of this.views) {

@@ -1,11 +1,14 @@
 // Right inspector: composition summary / single item / multi-selection.
 import { store } from '../core/store';
 import type { Item, KallaxItem, Rotation } from '../core/types';
-import { fmtCm, isOfficial, itemBox, kallaxNominal, unionBox, worldSize, boxesOverlap, MAX_CELLS, legsAvailable, KALLAX, cylinderDims, cylinderSize, isStructure, validInserts, INSERTS } from '../core/kallax';
+import { fmtCm, isOfficial, itemBox, kallaxNominal, unionBox, worldSize, boxesOverlap, MAX_CELLS, legsAvailable, KALLAX, cylinderDims, cylinderSize } from '../core/kallax';
+import { BASKET_VARIANTS, DEFAULT_FINISH, buildBom, fmtEur, frameFinishes, frameSold, type BasketVariant, type FinishId } from '../core/finishes';
 import { itemEuler, type Axis3 } from '../core/orient';
 import { h, clear, toast } from './dom';
 import { icon } from './icons';
-import { button, numberField, stepper, switchRow, textField, tip, type NumberField } from './controls';
+import { button, numberField, segmented, stepper, switchRow, textField, tip, type NumberField } from './controls';
+import { finishPicker } from './finish-picker';
+import { bomList, bomText, buildTotalFooter, currentBom } from './bom';
 import * as cmd from '../interaction/commands';
 import { MOD } from './dom';
 
@@ -21,6 +24,39 @@ function dimsBlock(w: number, d: number, hh: number): HTMLElement {
   return h('div', { class: 'dims-card', role: 'group', 'aria-label': `Dimensions ${dims3(w, d, hh)} cm` },
     cell('L', w, 'x'), sep('×', 'dim-x'), cell('P', d, 'y'), sep('×', 'dim-x'), cell('H', hh, 'z'),
     sep('cm', 'dim-unit'));
+}
+
+/** "Non proposée en 2×2, 1×4" when a finish is not sold for some of these (IKEA-sold) frames. */
+function notSoldIn(ks: KallaxItem[], f: FinishId): string | null {
+  const miss = new Set<string>();
+  for (const k of ks) if (frameSold(k.cols, k.rows) && !frameFinishes(k.cols, k.rows).includes(f)) miss.add(`${k.cols}×${k.rows}`);
+  return miss.size ? `Non proposée en ${[...miss].join(', ')}` : null;
+}
+
+/** Price card for one or several KALLAX: total + breakdown + BOM warnings. */
+function priceCard(ks: KallaxItem[], label: string): HTMLElement {
+  const b = buildBom(ks, store.doc.finish, store.doc.basket);
+  const sum = (kind: string) => b.lines.filter(l => l.kind === kind);
+  const parts: string[] = [];
+  const fr = sum('frame'), lg = sum('legs'), ins = sum('insert');
+  const tot = (ls: typeof b.lines) => ls.reduce((s, l) => s + (l.total ?? 0), 0);
+  const cnt = (ls: typeof b.lines) => ls.reduce((s, l) => s + l.qty, 0);
+  const nb = (t: string) => t.replace(/ /g, '\u00a0');
+  if (fr.length) parts.push(fr.every(l => l.total == null) ? 'cadre sur mesure' : `${cnt(fr) > 1 ? `${cnt(fr)} cadres` : 'cadre'} ${fmtEur(tot(fr))}`);
+  if (lg.length) parts.push(`piètement${cnt(lg) > 1 ? 's' : ''} ${lg.every(l => l.total == null) ? '—' : fmtEur(tot(lg))}`);
+  if (ins.length) parts.push(`${cnt(ins)} habillage${cnt(ins) > 1 ? 's' : ''} ${fmtEur(tot(ins))}`);
+  // insert notes don't name the fitting: prefix it ("Bloc 2 tiroirs : pas en noyer — brun noir")
+  const notes = [...new Set(b.lines.filter(l => l.note).map(l => l.kind === 'insert'
+    ? `${l.label.replace(/^KALLAX /, '').replace(/^./, c => c.toUpperCase())} : ${l.note!.replace(/^./, c => c.toLowerCase())}`
+    : l.note!))];
+  const priced = b.lines.some(l => l.total != null);
+  return h('div', { class: 'price-card', role: 'group', 'aria-label': `${label} : ${priced ? fmtEur(b.total) : 'non chiffré'}` },
+    h('div', { class: 'price-main' },
+      h('span', { class: 'price-k' }, label),
+      h('span', { class: `price-v${priced ? '' : ' none'}` }, priced ? fmtEur(b.total) : '—')),
+    parts.length ? h('div', { class: 'price-break' }, parts.map(nb).join(' · ')) : null,
+    ...notes.map(n => h('div', { class: 'price-note' }, icon('warning', 11), h('span', null, n))),
+  );
 }
 
 function group(title: string | null, ...children: (Node | null)[]) {
@@ -47,59 +83,36 @@ function summaryPanel(): Panel {
         stat('Calques', String(store.doc.layers.length))),
     );
     if (u) el.append(group('Hors-tout', dimsBlock(u.max.x - u.min.x, u.max.y - u.min.y, u.max.z - u.min.z)));
-    // shopping list
-    const counts = new Map<string, { n: number; label: string; sub: string; official: boolean }>();
-    for (const k of kallax) {
-      // normalise to IKEA naming (cols × rows as seen from the front)
-      const key = `k:${k.cols}x${k.rows}`;
-      const e = counts.get(key) ?? { n: 0, label: `Kallax ${k.cols}×${k.rows}`, sub: `${kallaxNominal(k.cols)}×${kallaxNominal(k.rows)}`, official: isOfficial(k.cols, k.rows) };
-      e.n++; counts.set(key, e);
-      for (const [, , t] of validInserts(k)) {
-        const ik = `ins:${t}`;
-        const e2 = counts.get(ik) ?? { n: 0, label: INSERTS[t].product.replace(/ \d+×\d+(×\d+)?.*$/, ''), sub: INSERTS[t].product.match(/\d+×\d+(×\d+)?/)?.[0] ?? '33×33', official: true };
-        e2.n++; counts.set(ik, e2);
-      }
-      if (k.legs) {
-        const lk = `legs:${k.cols}`;
-        const l = counts.get(lk) ?? { n: 0, label: 'Piètement KALLAX', sub: `${kallaxNominal(k.cols) - 1}×39×18`, official: true };
-        l.n++; counts.set(lk, l);
-      }
-    }
-    const blocks = new Map<string, { n: number; label: string; sub: string }>();
-    for (const b of all) if (b.kind === 'block' && !isStructure(b)) {
-      const key = `${b.shape ?? 'box'}|${b.name}|${b.size.w}|${b.size.d}|${b.size.h}`;
-      const cyl = b.shape === 'cylinder' || b.shape === 'square' ? cylinderDims(b) : null;
-      const e = blocks.get(key) ?? { n: 0, label: b.name, sub: cyl ? `${b.shape === 'square' ? '□' : 'Ø'} ${fmtCm(cyl.diameter)} × ${fmtCm(cyl.length)}` : dims3(b.size.w, b.size.d, b.size.h) };
-      e.n++; blocks.set(key, e);
-    }
-    const list = h('ul', { class: 'shop-list' });
-    const lines: string[] = [];
-    for (const e of [...counts.values()].sort((a, b) => b.n - a.n)) {
-      list.appendChild(h('li', null,
-        h('span', { class: 'qty' }, `${e.n}×`),
-        h('span', { class: 'shop-name' }, e.label, h('small', null, `${e.sub} cm`)),
-        h('span', { class: `pill ${e.official ? 'pill-ikea' : 'pill-custom'}` }, e.official ? 'IKEA' : 'Sur mesure')));
-      lines.push(`${e.n}× ${e.label} (${e.sub} cm)${e.official ? '' : ' — sur mesure'}`);
-    }
-    for (const e of blocks.values()) {
-      list.appendChild(h('li', { class: 'block' },
-        h('span', { class: 'qty' }, `${e.n}×`),
-        h('span', { class: 'shop-name' }, e.label, h('small', null, `${e.sub} cm`)),
-        h('span', { class: 'pill pill-block' }, 'Bloc')));
-      lines.push(`${e.n}× ${e.label} (${e.sub} cm)`);
-    }
-    if (!lines.length) {
-      list.appendChild(h('li', { class: 'empty' }, 'Aucun meuble pour l’instant.'));
-    }
-    const copy = lines.length ? button({
+    // finish (global) + basket variant
+    const gf = store.doc.finish ?? DEFAULT_FINISH;
+    const fp = finishPicker({
+      title: 'Finition', ariaLabel: 'Finition globale des Kallax',
+      onPick: f => { if (f && f !== (store.doc.finish ?? DEFAULT_FINISH)) store.update(d => { d.finish = f; }); },
+    });
+    const visK = items.filter((i): i is KallaxItem => i.kind === 'kallax');
+    fp.set({ value: gf, global: gf, unavailable: f => notSoldIn(visK, f) });
+    const overrides = kallax.filter(k => k.finish && k.finish !== gf).length;
+    if (overrides) fp.el.append(h('p', { class: 'hint finish-hint' },
+      overrides > 1 ? `${overrides} meubles ont leur propre finition.` : '1 meuble a sa propre finition.'));
+    const basket = segmented<BasketVariant>({
+      ariaLabel: 'Paniers BRANÄS', size: 'sm', value: store.doc.basket ?? 'naturel', cls: 'basket-seg',
+      options: BASKET_VARIANTS.map(v => ({ value: v.id, label: v.id === 'naturel' ? 'Naturel' : 'Blanc', tip: `${v.label} · ${fmtEur(v.price)}` })),
+      onChange: v => { if (v !== (store.doc.basket ?? 'naturel')) store.update(d => { d.basket = v; }); },
+    });
+    fp.el.append(h('div', { class: 'basket-row' }, h('span', { class: 'basket-label' }, 'Paniers'), basket.el));
+    el.append(fp.el);
+
+    // priced shopping list
+    const bom = currentBom();
+    const copy = bom.lines.length ? button({
       icon: 'duplicate', label: 'Copier', cls: 'mini-btn text', iconSize: 13,
-      tip: 'Copier la liste dans le presse-papiers',
+      tip: 'Copier la liste chiffrée dans le presse-papiers',
       onClick: () => {
-        navigator.clipboard?.writeText(`${store.doc.name}\n${lines.join('\n')}`).then(() => toast('Liste copiée'), () => toast('Copie impossible'));
+        navigator.clipboard?.writeText(bomText(bom, store.doc.name)).then(() => toast('Liste copiée'), () => toast('Copie impossible'));
       },
     }) : null;
-    el.append(h('div', { class: 'insp-group' },
-      h('div', { class: 'insp-title-row' }, h('h4', { class: 'insp-title' }, 'Liste de courses'), copy), list));
+    el.append(h('div', { class: 'insp-group bom-group' },
+      h('div', { class: 'insp-title-row' }, h('h4', { class: 'insp-title' }, 'Liste de courses'), copy), bomList(bom)));
     el.append(h('p', { class: 'hint insp-hint' }, 'Sélectionnez un objet pour modifier sa position, sa taille ou le dupliquer.'));
   };
   update();
@@ -202,6 +215,19 @@ function itemPanel(id: string): Panel {
     sizeGroup = group(it0.shape === 'window' ? 'Fenêtre' : 'Taille du bloc', h('div', { class: 'fields-3' }, fw.el, fd.el, fh.el));
   }
 
+  const priceHost = h('div', { class: 'price-host' });
+  const finishP = isK ? finishPicker({
+    withGlobal: true, ariaLabel: 'Finition de ce Kallax',
+    onPick: f => {
+      const cur = store.getItem(id);
+      if (!cur || cur.kind !== 'kallax' || store.isLocked(cur) || (cur.finish ?? null) === f) return;
+      store.update(d => {
+        const x = d.items.find(i => i.id === id);
+        if (x && x.kind === 'kallax') { if (f) x.finish = f; else delete x.finish; }
+      });
+    },
+  }) : null;
+
   const layerSel = h('select', { class: 'popup', 'aria-label': 'Calque' });
   layerSel.addEventListener('change', () => store.patchItem(id, { layerId: layerSel.value }));
   const layerWrap = h('div', { class: 'popup-wrap' }, layerSel, icon('chevronDown', 12, 'popup-chev'));
@@ -213,9 +239,11 @@ function itemPanel(id: string): Panel {
     h('div', { class: 'insp-hero' }, heroIcon, h('div', { class: 'hero-text' }, nameField.el, typeLabel)),
     lockBanner, overlapBanner,
     dimsHost,
+    priceHost,
     group('Position', h('div', { class: 'fields-3' }, fx.el, fy.el, fz.el)),
     group('Rotation (pas de 90°)', h('div', { class: 'rot-rows' }, rotRows.map(r => r.row))),
     sizeGroup,
+    ...(finishP ? [finishP.el] : []),
     group('Calque', layerWrap),
     group('Dupliquer', dupBtns),
     h('div', { class: 'insp-group' }, delBtn),
@@ -241,6 +269,11 @@ function itemPanel(id: string): Panel {
       legsSw!.input.disabled = !can || locked;
       legsSw!.el.classList.toggle('disabled', !can);
       legsSw!.el.title = can ? '' : 'Piètement IKEA : 2×2, 2×4 debout, 4×2 / 4×3 couchés, 4×4';
+      finishP!.set({
+        value: it.finish ?? null, inherit: !it.finish, global: store.doc.finish ?? DEFAULT_FINISH,
+        unavailable: f => notSoldIn([it], f), disabled: locked,
+      });
+      priceHost.replaceChildren(priceCard([it], 'Prix'));
     } else if (it.shape === 'cylinder' || it.shape === 'square') {
       const c = cylinderDims(it);
       typeLabel.textContent = it.shape === 'square'
@@ -314,9 +347,23 @@ function multiPanel(): Panel {
     alignBtn('y', 'alignFront', 'avant', 'min Y'),
     alignBtn('z', 'alignBottom', 'bas', 'min Z'));
   const delBtn = button({ icon: 'trash', label: 'Supprimer la sélection', kbd: '⌫', cls: 'btn-destructive wide', onClick: () => cmd.deleteSelection() });
+  const selKallax = () => store.selectedItems().filter((i): i is KallaxItem => i.kind === 'kallax' && !store.isLocked(i));
+  const finishP = finishPicker({
+    withGlobal: true, ariaLabel: 'Finition des Kallax sélectionnés',
+    onPick: f => {
+      const ids = new Set(selKallax().filter(k => (k.finish ?? null) !== f).map(k => k.id));
+      if (!ids.size) return;
+      store.update(d => {
+        for (const x of d.items) if (ids.has(x.id) && x.kind === 'kallax') { if (f) x.finish = f; else delete x.finish; }
+      });
+    },
+  });
+  const priceHost = h('div', { class: 'price-host' });
   el.append(
     h('div', { class: 'insp-hero' }, h('div', { class: 'hero-icon' }, icon('duplicate', 22)), h('div', null, title, sub)),
     group('Encombrement du groupe', dimsHost),
+    priceHost,
+    finishP.el,
     group('Aligner', alignRow),
     group('Dupliquer le groupe', dupRow()),
     h('div', { class: 'insp-group' }, delBtn),
@@ -328,6 +375,20 @@ function multiPanel(): Panel {
     sub.textContent = `${k} Kallax · ${sel.length - k} bloc${sel.length - k > 1 ? 's' : ''}`;
     const u = unionBox(sel);
     if (u) dimsHost.replaceChildren(dimsBlock(u.max.x - u.min.x, u.max.y - u.min.y, u.max.z - u.min.z));
+    // finish of the selected KALLAX (one undo step for all)
+    const ks = sel.filter((i): i is KallaxItem => i.kind === 'kallax');
+    finishP.el.hidden = !ks.length;
+    priceHost.replaceChildren(...(ks.length ? [priceCard(ks, ks.length > 1 ? `${ks.length} Kallax` : 'Kallax')] : []));
+    if (ks.length) {
+      const fs = ks.map(k => k.finish ?? null);
+      const same = fs.every(f => f === fs[0]);
+      finishP.set({
+        value: same ? fs[0] : null, inherit: same && fs[0] === null, mixed: !same,
+        global: store.doc.finish ?? DEFAULT_FINISH,
+        unavailable: f => notSoldIn(ks, f),
+        disabled: ks.every(k => store.isLocked(k)),
+      });
+    }
   };
   update();
   return { el, update };
@@ -344,7 +405,17 @@ function alignBtn(axis: 'x' | 'y' | 'z', ic: string, label: string, sub: string)
 export function buildInspector(host: HTMLElement) {
   const head = h('div', { class: 'insp-head' }, h('span', { class: 'insp-head-title' }, 'Inspecteur'));
   const scroll = h('div', { class: 'insp-scroll' });
-  host.append(head, scroll);
+  const footer = buildTotalFooter(() => {
+    // Show the composition details and bring the priced list into view.
+    if (store.selection.length) store.select([]);
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const g = scroll.querySelector<HTMLElement>('.bom-group');
+      if (!g) return;
+      g.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      g.classList.remove('flash'); void g.offsetWidth; g.classList.add('flash');
+    }));
+  });
+  host.append(head, scroll, footer);
   let key = '';
   let panel: Panel | null = null;
 
