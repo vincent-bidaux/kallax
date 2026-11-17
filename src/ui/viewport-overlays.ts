@@ -4,21 +4,22 @@ import { h } from './dom';
 import { icon } from './icons';
 import { tip } from './controls';
 import * as cmd from '../interaction/commands';
+import { t } from '../core/i18n';
 
 export function buildViewportOverlays(host: HTMLElement) {
-  const isoBtn = h('button', { type: 'button', class: 'pill-btn' }, icon('iso', 14), 'Isométrique');
-  const cavBtn = h('button', { type: 'button', class: 'pill-btn' }, icon('cavalier', 14), 'Cavalière');
-  tip(isoBtn, 'Revenir à la vue isométrique', '1');
-  tip(cavBtn, 'Revenir à la perspective cavalière', '2');
+  const isoBtn = h('button', { type: 'button', class: 'pill-btn' }, icon('iso', 14), t('view.iso'));
+  const cavBtn = h('button', { type: 'button', class: 'pill-btn' }, icon('cavalier', 14), t('view.cavalier'));
+  tip(isoBtn, t('vp.backToIso'), '1');
+  tip(cavBtn, t('vp.backToCavalier'), '2');
   isoBtn.addEventListener('click', () => cmd.setView('iso'));
   cavBtn.addEventListener('click', () => cmd.setView('cavalier'));
-  const pill = h('div', { class: 'vp-pill', role: 'group', 'aria-label': 'Revenir à une vue prédéfinie', 'data-ui-overlay': '' },
-    h('span', { class: 'pill-text' }, icon('orbit', 14), 'Revenir en'), isoBtn, cavBtn);
+  const pill = h('div', { class: 'vp-pill', role: 'group', 'aria-label': t('vp.backToAria'), 'data-ui-overlay': '' },
+    h('span', { class: 'pill-text' }, icon('orbit', 14), t('vp.backTo')), isoBtn, cavBtn);
 
   const empty = h('div', { class: 'vp-empty', 'data-ui-overlay': '' },
     h('div', { class: 'empty-art', 'aria-hidden': 'true' }, icon('cube', 34)),
-    h('div', { class: 'empty-title' }, 'Glissez un KALLAX depuis la bibliothèque'),
-    h('div', { class: 'empty-sub' }, 'Les meubles s’aimantent à la grille et entre eux. Empilez-les à côté, derrière ou dessus.'));
+    h('div', { class: 'empty-title' }, t('vp.emptyTitle')),
+    h('div', { class: 'empty-sub' }, t('vp.emptySub')));
 
   host.append(pill, empty);
 

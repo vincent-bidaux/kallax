@@ -13,6 +13,7 @@
 import type { Item, KallaxItem, Size3, Vec3 } from './types';
 import { orientDir, orientSize } from './orient';
 import { frameSold, legsCompatible } from './finishes';
+import { t, DECIMAL } from './i18n';
 
 export const KALLAX = {
   depth: 39,
@@ -31,8 +32,8 @@ export function legsAvailable(cols: number, rows: number): boolean {
 
 /** IKEA reference pages. */
 export const IKEA_LINKS = [
-  { label: 'Série KALLAX — par nombre de cases', url: 'https://www.ikea.com/fr/fr/cat/kallax-serie-27534/' },
-  { label: 'Étagères KALLAX — par format', url: 'https://www.ikea.com/fr/fr/cat/etageres-kallax-58285/' },
+  { label: t('link.series'), url: 'https://www.ikea.com/fr/fr/cat/kallax-serie-27534/' },
+  { label: t('link.shelves'), url: 'https://www.ikea.com/fr/fr/cat/etageres-kallax-58285/' },
 ];
 
 export const MAX_CELLS = 5;
@@ -120,11 +121,11 @@ export function boxesOverlap(a: Box3, b: Box3, eps = 0.01): boolean {
 
 export function fmtCm(v: number): string {
   const r = Math.round(v * 10) / 10;
-  return (Number.isInteger(r) ? r.toFixed(0) : r.toFixed(1)).replace('.', ',');
+  return (Number.isInteger(r) ? r.toFixed(0) : r.toFixed(1)).replace('.', DECIMAL);
 }
 
 export function kallaxDisplayName(it: KallaxItem): string {
-  return `Kallax ${it.cols}×${it.rows}${it.legs ? ' + piètement' : ''}`;
+  return `Kallax ${it.cols}×${it.rows}${it.legs ? t('kallax.legsSuffix') : ''}`;
 }
 
 // ── round beams (cylinder blocks) ─────────────────────────────
@@ -154,10 +155,10 @@ export const WINDOW_SILL = 90;
 // ── cell fittings ("habillage") ───────────────────────────────
 import type { InsertType } from './types';
 export const INSERTS: Record<InsertType, { label: string; product: string; icon: string }> = {
-  door: { label: 'Porte', product: 'KALLAX bloc porte 33×33', icon: 'insertDoor' },
-  drawers: { label: '2 tiroirs', product: 'KALLAX bloc 2 tiroirs 33×33', icon: 'insertDrawers' },
-  basket: { label: 'Panier', product: 'BRANÄS panier rotin 33×38×33', icon: 'insertBasket' },
-  shelf: { label: 'Séparation', product: 'KALLAX insert 1 étagère 33×33', icon: 'insertShelf' },
+  door: { label: t('insert.door'), product: `${t('product.door')} 33×33`, icon: 'insertDoor' },
+  drawers: { label: t('insert.drawers'), product: `${t('product.drawers')} 33×33`, icon: 'insertDrawers' },
+  basket: { label: t('insert.basket'), product: `${t('product.basketFull')} 33×38×33`, icon: 'insertBasket' },
+  shelf: { label: t('insert.shelf'), product: `${t('product.shelf')} 33×33`, icon: 'insertShelf' },
 };
 /** Valid fittings of a unit (ignores cells outside the current cols × rows). */
 export function validInserts(it: KallaxItem): [number, number, InsertType][] {

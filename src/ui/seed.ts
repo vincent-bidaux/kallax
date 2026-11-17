@@ -1,19 +1,47 @@
 // First-launch demo composition.
 import { store, uid } from '../core/store';
-import type { Item, Layer } from '../core/types';
+import type { DesignDoc, Item, Layer } from '../core/types';
+import { validDoc } from './file-io';
 import { kallaxOuter, KALLAX } from '../core/kallax';
+import { t } from '../core/i18n';
 
 const LS_SEEDED = 'kallax-designer:seeded';
 
-/** Seeds a demo once (flag in localStorage). Returns true when a demo was created. */
-export function seedIfFirstLaunch(): boolean {
+/**
+ * Shared default project, shipped with the app (public/default-project.json).
+ * Every first-time visitor starts from it; when it is missing, a small demo is used.
+ */
+const DEFAULT_PROJECT_URL = '/default-project.json';
+
+async function loadDefaultProject(): Promise<DesignDoc | null> {
+  try {
+    const r = await fetch(DEFAULT_PROJECT_URL, { cache: 'no-cache' });
+    if (!r.ok) return null;
+    const d = await r.json();
+    return validDoc(d) ? d : null;
+  } catch { return null; }
+}
+
+/** First launch: load the shared default project (or the demo). Returns true when something was loaded. */
+export async function seedIfFirstLaunch(): Promise<boolean> {
   let seeded = false;
   try { seeded = !!localStorage.getItem(LS_SEEDED); } catch { /* ignore */ }
   if (seeded || store.items.length) return false;
   try { localStorage.setItem(LS_SEEDED, '1'); } catch { /* ignore */ }
 
+  const def = await loadDefaultProject();
+  if (def) {
+    if (!def.layers.some(l => l.id === def.activeLayerId)) def.activeLayerId = def.layers[0].id;
+    store.loadDoc(def);
+    store.clearHistory();
+    return true;
+  }
+  return seedDemo();
+}
+
+function seedDemo(): boolean {
   const base = store.doc.layers[0];
-  const existing: Layer = { id: uid('layer'), name: 'Existant', visible: true, locked: false };
+  const existing: Layer = { id: uid('layer'), name: t('seed.existing'), visible: true, locked: false };
   const w4 = kallaxOuter(4), w2 = kallaxOuter(2);
   const h2 = kallaxOuter(2);
   const items: Item[] = [
@@ -24,11 +52,11 @@ export function seedIfFirstLaunch(): boolean {
     // 1×4 standing next to it
     { id: uid(), kind: 'kallax', name: 'Kallax 1×4', cols: 1, rows: 4, position: { x: w4, y: 0, z: 0 }, rotation: 0, layerId: base.id },
     // radiator against the wall behind, to the left
-    { id: uid(), kind: 'block', name: 'Radiateur', size: { w: 80, d: 10, h: 60 }, position: { x: -95, y: KALLAX.depth - 10, z: 15 }, rotation: 0, layerId: existing.id },
+    { id: uid(), kind: 'block', name: t('preset.radiator'), size: { w: 80, d: 10, h: 60 }, position: { x: -95, y: KALLAX.depth - 10, z: 15 }, rotation: 0, layerId: existing.id },
   ];
   store.update(d => {
-    d.name = 'Salon — meuble TV';
-    d.layers = [{ ...base, name: 'Meubles' }, existing];
+    d.name = t('seed.docName');
+    d.layers = [{ ...base, name: t('seed.furniture') }, existing];
     d.activeLayerId = base.id;
     d.items = items;
   });

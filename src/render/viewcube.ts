@@ -12,6 +12,7 @@ import type { ViewportAPI } from '../core/contracts';
 import type { ThemeTokens } from '../core/theme';
 import { store, type StoreEvent } from '../core/store';
 import { ensureCubeStyle, HOME_SVG } from './viewcube-style';
+import { t } from '../core/i18n';
 
 const SIZE = 110;          // CSS px
 const CH = 0.34;           // chamfer (cube half-size = 1)
@@ -40,12 +41,12 @@ interface FaceDef {
 }
 
 const FACES: FaceDef[] = [
-  { label: 'AVANT', n: new THREE.Vector3(0, -1, 0), r: new THREE.Vector3(1, 0, 0), u: new THREE.Vector3(0, 0, 1) },
-  { label: 'ARRIÈRE', n: new THREE.Vector3(0, 1, 0), r: new THREE.Vector3(-1, 0, 0), u: new THREE.Vector3(0, 0, 1) },
-  { label: 'GAUCHE', n: new THREE.Vector3(-1, 0, 0), r: new THREE.Vector3(0, -1, 0), u: new THREE.Vector3(0, 0, 1) },
-  { label: 'DROITE', n: new THREE.Vector3(1, 0, 0), r: new THREE.Vector3(0, 1, 0), u: new THREE.Vector3(0, 0, 1) },
-  { label: 'DESSUS', n: new THREE.Vector3(0, 0, 1), r: new THREE.Vector3(1, 0, 0), u: new THREE.Vector3(0, 1, 0) },
-  { label: 'DESSOUS', n: new THREE.Vector3(0, 0, -1), r: new THREE.Vector3(1, 0, 0), u: new THREE.Vector3(0, -1, 0) },
+  { label: t('cube.front'), n: new THREE.Vector3(0, -1, 0), r: new THREE.Vector3(1, 0, 0), u: new THREE.Vector3(0, 0, 1) },
+  { label: t('cube.back'), n: new THREE.Vector3(0, 1, 0), r: new THREE.Vector3(-1, 0, 0), u: new THREE.Vector3(0, 0, 1) },
+  { label: t('cube.left'), n: new THREE.Vector3(-1, 0, 0), r: new THREE.Vector3(0, -1, 0), u: new THREE.Vector3(0, 0, 1) },
+  { label: t('cube.right'), n: new THREE.Vector3(1, 0, 0), r: new THREE.Vector3(0, 1, 0), u: new THREE.Vector3(0, 0, 1) },
+  { label: t('cube.top'), n: new THREE.Vector3(0, 0, 1), r: new THREE.Vector3(1, 0, 0), u: new THREE.Vector3(0, 1, 0) },
+  { label: t('cube.bottom'), n: new THREE.Vector3(0, 0, -1), r: new THREE.Vector3(1, 0, 0), u: new THREE.Vector3(0, -1, 0) },
 ];
 
 /** Fake key light for a soft, Apple-ish shading of the facets. */
@@ -93,8 +94,8 @@ export class ViewCube {
     this.homeBtn = document.createElement('button');
     this.homeBtn.type = 'button';
     this.homeBtn.className = 'kd-cube-home';
-    this.homeBtn.title = 'Vue isométrique';
-    this.homeBtn.setAttribute('aria-label', 'Revenir à la vue isométrique');
+    this.homeBtn.title = t('view.isoTip');
+    this.homeBtn.setAttribute('aria-label', t('vp.backToIso'));
     this.homeBtn.innerHTML = HOME_SVG;
     this.root.appendChild(this.homeBtn);
     host.appendChild(this.root);

@@ -8,6 +8,7 @@ import { Popover, fillMenu } from './popover';
 import * as cmd from '../interaction/commands';
 import { openJSON, exportJSON, exportPNG } from './file-io';
 import { newProject, saveProject, openProjectsSheet, onProjectsChange, saveStatus, isDirty } from './projects';
+import { t, lang, setLang, type Lang } from '../core/i18n';
 
 export interface ToolbarHooks {
   toggleSidebar(): void;
@@ -17,18 +18,18 @@ export interface ToolbarHooks {
 
 export function buildToolbar(host: HTMLElement, hooks: ToolbarHooks) {
   // ── left: sidebar toggle, glyph, document name, undo/redo ──
-  const sideBtn = button({ icon: 'sidebarLeft', label: 'Afficher/masquer la barre latérale', iconOnly: true, cls: 'tb-btn', iconSize: 18, onClick: hooks.toggleSidebar });
+  const sideBtn = button({ icon: 'sidebarLeft', label: t('tb.toggleSidebar'), iconOnly: true, cls: 'tb-btn', iconSize: 18, onClick: hooks.toggleSidebar });
   const glyph = h('div', { class: 'app-glyph', 'aria-hidden': 'true' }, icon('cube', 17));
   const nameInput = h('input', {
     class: 'doc-name', type: 'text', value: store.doc.name, spellcheck: 'false',
-    'aria-label': 'Nom du document', size: '1',
+    'aria-label': t('tb.docName'), size: '1',
   });
   const sizer = h('span', { class: 'doc-name-sizer', 'aria-hidden': 'true' });
   const nameWrap = h('div', { class: 'doc-name-wrap' }, sizer, nameInput);
   const fitName = () => { sizer.textContent = nameInput.value || ' '; };
   nameInput.addEventListener('input', fitName);
   const commitName = () => {
-    const v = nameInput.value.trim() || 'Sans titre';
+    const v = nameInput.value.trim() || t('doc.untitled');
     if (v !== store.doc.name) store.update(d => { d.name = v; });
     nameInput.value = v; fitName();
   };
@@ -38,33 +39,33 @@ export function buildToolbar(host: HTMLElement, hooks: ToolbarHooks) {
     e.stopPropagation();
   });
   nameInput.addEventListener('blur', commitName);
-  const docSub = h('div', { class: 'doc-sub' }, 'Kallax Designer');
+  const docSub = h('div', { class: 'doc-sub' }, t('app.title'));
   const docBlock = h('div', { class: 'doc-block' }, nameWrap, docSub);
 
-  const undoBtn = button({ icon: 'undo', label: 'Annuler', iconOnly: true, kbd: `${MOD}Z`, cls: 'tb-btn', iconSize: 18, onClick: () => store.undo() });
-  const redoBtn = button({ icon: 'redo', label: 'Rétablir', iconOnly: true, kbd: `${SHIFT}${MOD}Z`, cls: 'tb-btn', iconSize: 18, onClick: () => store.redo() });
+  const undoBtn = button({ icon: 'undo', label: t('tb.undo'), iconOnly: true, kbd: `${MOD}Z`, cls: 'tb-btn', iconSize: 18, onClick: () => store.undo() });
+  const redoBtn = button({ icon: 'redo', label: t('tb.redo'), iconOnly: true, kbd: `${SHIFT}${MOD}Z`, cls: 'tb-btn', iconSize: 18, onClick: () => store.redo() });
   const history = h('div', { class: 'tb-group' }, undoBtn, redoBtn);
-  const projBtn = button({ icon: 'folder', label: 'Mes projets', iconOnly: true, kbd: `${MOD}O`, cls: 'tb-btn', iconSize: 18, onClick: openProjectsSheet });
-  const saveBtn = button({ icon: 'save', label: 'Enregistrer', iconOnly: true, kbd: `${MOD}S`, cls: 'tb-btn', iconSize: 18, onClick: () => saveProject() });
+  const projBtn = button({ icon: 'folder', label: t('tb.projects'), iconOnly: true, kbd: `${MOD}O`, cls: 'tb-btn', iconSize: 18, onClick: openProjectsSheet });
+  const saveBtn = button({ icon: 'save', label: t('tb.save'), iconOnly: true, kbd: `${MOD}S`, cls: 'tb-btn', iconSize: 18, onClick: () => saveProject() });
   const files = h('div', { class: 'tb-group' }, projBtn, saveBtn);
 
   // ── center: view + projection ──
   const viewSeg = segmented<'iso' | 'cavalier' | 'free'>({
-    ariaLabel: 'Vue',
+    ariaLabel: t('tb.view'),
     options: [
-      { value: 'iso', label: 'Isométrique', tip: 'Vue isométrique', kbd: '1' },
-      { value: 'cavalier', label: 'Cavalière', tip: 'Perspective cavalière', kbd: '2' },
-      { value: 'free', label: 'Libre', tip: 'Rotation libre — glissez dans la vue pour orbiter' },
+      { value: 'iso', label: t('view.iso'), tip: t('view.isoTip'), kbd: '1' },
+      { value: 'cavalier', label: t('view.cavalier'), tip: t('view.cavalierTip'), kbd: '2' },
+      { value: 'free', label: t('view.free'), tip: t('view.freeTip') },
     ],
     value: viewValue(store.settings.view),
     onChange: (v) => cmd.setView(v),
     cls: 'seg-view',
   });
   const projSeg = segmented<'perspective' | 'orthographic'>({
-    ariaLabel: 'Projection',
+    ariaLabel: t('tb.projection'),
     options: [
-      { value: 'perspective', label: 'Perspective', tip: 'Projection perspective', kbd: 'P' },
-      { value: 'orthographic', label: 'Ortho', tip: 'Projection orthographique', kbd: 'P' },
+      { value: 'perspective', label: t('proj.persp'), tip: t('proj.perspTip'), kbd: 'P' },
+      { value: 'orthographic', label: t('proj.ortho'), tip: t('proj.orthoTip'), kbd: 'P' },
     ],
     value: store.settings.projection,
     onChange: (v) => cmd.setProjection(v),
@@ -75,61 +76,61 @@ export function buildToolbar(host: HTMLElement, hooks: ToolbarHooks) {
     h('div', { class: 'tb-labeled' }, projSeg.el));
 
   // ── right: popovers ──
-  const cotesBtn = button({ icon: 'ruler', label: 'Cotes', tip: 'Cotes', cls: 'tb-btn tb-pill', iconSize: 17 });
-  const renduBtn = button({ icon: 'render', label: 'Rendu', tip: 'Rendu et thème', cls: 'tb-btn tb-pill', iconSize: 17 });
-  const grilleBtn = button({ icon: 'grid', label: 'Grille', tip: 'Grille et aimantation', cls: 'tb-btn tb-pill', iconSize: 17 });
-  const fitBtn = button({ icon: 'fit', label: 'Cadrer', tip: 'Cadrer la composition', kbd: 'F', cls: 'tb-btn tb-pill', iconSize: 17, onClick: () => cmd.zoomToFit() });
-  const moreBtn = button({ icon: 'moreCircle', label: 'Plus d’options', iconOnly: true, cls: 'tb-btn', iconSize: 19 });
-  const inspBtn = button({ icon: 'sidebarRight', label: 'Afficher/masquer l’inspecteur', iconOnly: true, cls: 'tb-btn', iconSize: 18, onClick: hooks.toggleInspector });
+  const cotesBtn = button({ icon: 'ruler', label: t('tb.dims'), tip: t('tb.dims'), cls: 'tb-btn tb-pill', iconSize: 17 });
+  const renduBtn = button({ icon: 'render', label: t('tb.render'), tip: t('tb.renderTip'), cls: 'tb-btn tb-pill', iconSize: 17 });
+  const grilleBtn = button({ icon: 'grid', label: t('tb.grid'), tip: t('tb.gridTip'), cls: 'tb-btn tb-pill', iconSize: 17 });
+  const fitBtn = button({ icon: 'fit', label: t('tb.fit'), tip: t('tb.fitTip'), kbd: 'F', cls: 'tb-btn tb-pill', iconSize: 17, onClick: () => cmd.zoomToFit() });
+  const moreBtn = button({ icon: 'moreCircle', label: t('tb.more'), iconOnly: true, cls: 'tb-btn', iconSize: 19 });
+  const inspBtn = button({ icon: 'sidebarRight', label: t('tb.toggleInspector'), iconOnly: true, cls: 'tb-btn', iconSize: 18, onClick: hooks.toggleInspector });
 
   // Cotes
-  const cotes = new Popover(cotesBtn, { title: 'Cotes', width: 280 });
-  const swItems = switchRow({ label: 'Cotes par bloc', hint: 'L × P × H de chaque meuble', icon: 'ruler', kbd: 'M', value: store.settings.measureItems, onChange: v => store.setSettings({ measureItems: v }) });
-  const swGlobal = switchRow({ label: 'Cotes globales', hint: 'Hors-tout de la composition', icon: 'fit', value: store.settings.measureGlobal, onChange: v => store.setSettings({ measureGlobal: v }) });
+  const cotes = new Popover(cotesBtn, { title: t('tb.dims'), width: 280 });
+  const swItems = switchRow({ label: t('dims.items'), hint: t('dims.itemsHint'), icon: 'ruler', kbd: 'M', value: store.settings.measureItems, onChange: v => store.setSettings({ measureItems: v }) });
+  const swGlobal = switchRow({ label: t('dims.global'), hint: t('dims.globalHint'), icon: 'fit', value: store.settings.measureGlobal, onChange: v => store.setSettings({ measureGlobal: v }) });
   cotes.body.append(h('div', { class: 'group' }, swItems.el, swGlobal.el));
 
   // Rendu
-  const rendu = new Popover(renduBtn, { title: 'Rendu', width: 300 });
+  const rendu = new Popover(renduBtn, { title: t('tb.render'), width: 300 });
   const themeSeg = segmented<'blueprint' | 'paper'>({
-    ariaLabel: 'Thème', value: store.settings.theme,
-    options: [{ value: 'blueprint', label: 'Plan d’architecte' }, { value: 'paper', label: 'Papier' }],
+    ariaLabel: t('render.theme'), value: store.settings.theme,
+    options: [{ value: 'blueprint', label: t('render.blueprint') }, { value: 'paper', label: t('render.paper') }],
     onChange: v => store.setSettings({ theme: v }),
   });
-  const swShadows = switchRow({ label: 'Ombrage', hint: 'Faces ombrées selon leur orientation', icon: 'shadow', value: store.settings.shadows, onChange: v => store.setSettings({ shadows: v }) });
-  const swTransp = switchRow({ label: 'Transparence', hint: 'Arêtes cachées en pointillés', icon: 'transparency', value: store.settings.transparency, onChange: v => store.setSettings({ transparency: v }) });
-  const swFinish = switchRow({ label: 'Couleurs des finitions', hint: 'Teinte réelle des étagères', icon: 'swatch', value: store.settings.finishColors, onChange: v => store.setSettings({ finishColors: v }) });
+  const swShadows = switchRow({ label: t('render.shadows'), hint: t('render.shadowsHint'), icon: 'shadow', value: store.settings.shadows, onChange: v => store.setSettings({ shadows: v }) });
+  const swTransp = switchRow({ label: t('render.transparency'), hint: t('render.transparencyHint'), icon: 'transparency', value: store.settings.transparency, onChange: v => store.setSettings({ transparency: v }) });
+  const swFinish = switchRow({ label: t('render.finishColors'), hint: t('render.finishColorsHint'), icon: 'swatch', value: store.settings.finishColors, onChange: v => store.setSettings({ finishColors: v }) });
   const angleSeg = segmented<number>({
-    ariaLabel: 'Angle des fuyantes', size: 'sm', value: store.settings.cavalierAngle,
+    ariaLabel: t('render.angleAria'), size: 'sm', value: store.settings.cavalierAngle,
     options: [30, 45, 60].map(a => ({ value: a, label: `${a}°` })),
     onChange: v => store.setSettings({ cavalierAngle: v }),
   });
   const ratioSeg = segmented<number>({
-    ariaLabel: 'Rapport de réduction', size: 'sm', value: store.settings.cavalierRatio,
-    options: [{ value: 1, label: '1 · cavalière' }, { value: 0.5, label: '0,5 · cabinet' }],
+    ariaLabel: t('render.ratioAria'), size: 'sm', value: store.settings.cavalierRatio,
+    options: [{ value: 1, label: t('render.ratioCavalier') }, { value: 0.5, label: t('render.ratioCabinet') }],
     onChange: v => store.setSettings({ cavalierRatio: v }),
   });
   rendu.body.append(
-    h('div', { class: 'pop-label' }, 'Thème'), themeSeg.el,
+    h('div', { class: 'pop-label' }, t('render.theme')), themeSeg.el,
     h('div', { class: 'group' }, swShadows.el, swTransp.el, swFinish.el),
-    h('div', { class: 'pop-label' }, 'Perspective cavalière'),
+    h('div', { class: 'pop-label' }, t('render.cavalier')),
     h('div', { class: 'group' },
-      h('div', { class: 'row' }, h('span', { class: 'row-label' }, h('span', { class: 'row-text' }, 'Angle')), angleSeg.el),
-      h('div', { class: 'row' }, h('span', { class: 'row-label' }, h('span', { class: 'row-text' }, 'Rapport')), ratioSeg.el)),
+      h('div', { class: 'row' }, h('span', { class: 'row-label' }, h('span', { class: 'row-text' }, t('render.angle'))), angleSeg.el),
+      h('div', { class: 'row' }, h('span', { class: 'row-label' }, h('span', { class: 'row-text' }, t('render.ratio'))), ratioSeg.el)),
   );
 
   // Grille
-  const grille = new Popover(grilleBtn, { title: 'Grille', width: 300 });
+  const grille = new Popover(grilleBtn, { title: t('tb.grid'), width: 300 });
   const stepSeg = segmented<number>({
-    ariaLabel: 'Pas de la grille', value: store.settings.gridCell,
-    options: [1, 5, 10, 35].map(v => ({ value: v, label: `${v} cm`, tip: v === 35 ? 'Pas Kallax (35 cm)' : undefined })),
+    ariaLabel: t('grid.stepAria'), value: store.settings.gridCell,
+    options: [1, 5, 10, 35].map(v => ({ value: v, label: `${v} cm`, tip: v === 35 ? t('grid.kallaxPitch') : undefined })),
     onChange: v => store.setSettings({ gridCell: v }),
   });
-  const swSnapGrid = switchRow({ label: 'Aimanter à la grille', icon: 'grid', value: store.settings.snapGrid, onChange: v => store.setSettings({ snapGrid: v }) });
-  const swSnapItems = switchRow({ label: 'Aimanter aux objets', hint: 'Faces jointives et alignements', icon: 'magnet', value: store.settings.snapItems, onChange: v => store.setSettings({ snapItems: v }) });
-  const swShowGrid = switchRow({ label: 'Afficher la grille', kbd: 'G', icon: 'grid', value: store.settings.showGrid, onChange: v => store.setSettings({ showGrid: v }) });
-  const swAxes = switchRow({ label: 'Afficher l’origine', hint: 'Axes X, Y, Z en 0,0,0', icon: 'target', value: store.settings.showAxes, onChange: v => store.setSettings({ showAxes: v }) });
+  const swSnapGrid = switchRow({ label: t('grid.snapGrid'), icon: 'grid', value: store.settings.snapGrid, onChange: v => store.setSettings({ snapGrid: v }) });
+  const swSnapItems = switchRow({ label: t('grid.snapItems'), hint: t('grid.snapItemsHint'), icon: 'magnet', value: store.settings.snapItems, onChange: v => store.setSettings({ snapItems: v }) });
+  const swShowGrid = switchRow({ label: t('grid.show'), kbd: 'G', icon: 'grid', value: store.settings.showGrid, onChange: v => store.setSettings({ showGrid: v }) });
+  const swAxes = switchRow({ label: t('grid.origin'), hint: t('grid.originHint'), icon: 'target', value: store.settings.showAxes, onChange: v => store.setSettings({ showAxes: v }) });
   grille.body.append(
-    h('div', { class: 'pop-label' }, 'Pas'), stepSeg.el,
+    h('div', { class: 'pop-label' }, t('grid.step')), stepSeg.el,
     h('div', { class: 'group' }, swSnapGrid.el, swSnapItems.el),
     h('div', { class: 'group' }, swShowGrid.el, swAxes.el),
   );
@@ -137,14 +138,19 @@ export function buildToolbar(host: HTMLElement, hooks: ToolbarHooks) {
   // … menu
   const menu = new Popover(moreBtn, { role: 'menu', cls: 'menu-pop', width: 248 });
   fillMenu(menu, [
-    { label: 'Nouveau projet', icon: 'docNew', action: () => newProject() },
-    { label: 'Mes projets…', icon: 'folder', kbd: `${MOD}O`, action: openProjectsSheet },
-    { label: 'Enregistrer', icon: 'save', kbd: `${MOD}S`, action: () => saveProject(), separatorBefore: true },
-    { label: 'Enregistrer sous…', icon: 'duplicate', kbd: `${SHIFT}${MOD}S`, action: () => saveProject(true) },
-    { label: 'Importer JSON…', icon: 'folder', action: openJSON, separatorBefore: true },
-    { label: 'Exporter JSON', icon: 'download', action: exportJSON },
-    { label: 'Exporter PNG', icon: 'photo', action: exportPNG },
-    { label: 'Raccourcis clavier', icon: 'keyboard', kbd: '?', action: hooks.openShortcuts, separatorBefore: true },
+    { label: t('menu.newProject'), icon: 'docNew', action: () => newProject() },
+    { label: t('menu.projects'), icon: 'folder', kbd: `${MOD}O`, action: openProjectsSheet },
+    { label: t('menu.save'), icon: 'save', kbd: `${MOD}S`, action: () => saveProject(), separatorBefore: true },
+    { label: t('menu.saveAs'), icon: 'duplicate', kbd: `${SHIFT}${MOD}S`, action: () => saveProject(true) },
+    { label: t('menu.importJSON'), icon: 'folder', action: openJSON, separatorBefore: true },
+    { label: t('menu.exportJSON'), icon: 'download', action: exportJSON },
+    { label: t('menu.exportPNG'), icon: 'photo', action: exportPNG },
+    { label: t('menu.shortcuts'), icon: 'keyboard', kbd: '?', action: hooks.openShortcuts, separatorBefore: true },
+    // Language: two checkable items (labels in their own language, like macOS)
+    ...(([['fr', 'Français'], ['en', 'English']] as [Lang, string][]).map(([l, label], i) => ({
+      label, lang: l, checked: lang === l, heading: i === 0 ? t('menu.language') : undefined,
+      separatorBefore: i === 0, action: () => setLang(l),
+    }))),
   ]);
 
   const right = h('div', { class: 'tb-right' },
@@ -157,10 +163,10 @@ export function buildToolbar(host: HTMLElement, hooks: ToolbarHooks) {
   const left = h('div', { class: 'tb-left' }, sideBtn, glyph, docBlock, h('div', { class: 'tb-sep', 'aria-hidden': 'true' }), files, history);
   host.append(left, center, right);
   host.setAttribute('role', 'toolbar');
-  host.setAttribute('aria-label', 'Barre d’outils');
-  tip(sideBtn, 'Barre latérale');
-  tip(inspBtn, 'Inspecteur');
-  tip(moreBtn, 'Plus');
+  host.setAttribute('aria-label', t('tb.aria'));
+  tip(sideBtn, t('tb.sidebarTip'));
+  tip(inspBtn, t('inspector.title'));
+  tip(moreBtn, t('tb.moreTip'));
 
   // ── sync ──
   const sync = () => {
@@ -168,7 +174,7 @@ export function buildToolbar(host: HTMLElement, hooks: ToolbarHooks) {
     viewSeg.set(viewValue(s.view));
     projSeg.set(s.view === 'cavalier' ? 'orthographic' : s.projection);
     projSeg.setDisabled(s.view === 'cavalier');
-    projSeg.el.title = s.view === 'cavalier' ? 'La cavalière est toujours une projection oblique orthographique' : '';
+    projSeg.el.title = s.view === 'cavalier' ? t('tb.cavalierOrtho') : '';
     swItems.set(s.measureItems); swGlobal.set(s.measureGlobal);
     themeSeg.set(s.theme); swShadows.set(s.shadows); swTransp.set(s.transparency); swFinish.set(s.finishColors);
     angleSeg.set(s.cavalierAngle); ratioSeg.set(s.cavalierRatio);
@@ -180,7 +186,7 @@ export function buildToolbar(host: HTMLElement, hooks: ToolbarHooks) {
     undoBtn.disabled = !store.canUndo();
     redoBtn.disabled = !store.canRedo();
     if (document.activeElement !== nameInput) { nameInput.value = store.doc.name; fitName(); }
-    document.title = `${isDirty() ? '• ' : ''}${store.doc.name} — Kallax Designer`;
+    document.title = `${isDirty() ? '• ' : ''}${store.doc.name} — ${t('app.title')}`;
     docSub.textContent = saveStatus();
     docSub.classList.toggle('dirty', isDirty());
     saveBtn.classList.toggle('dirty', isDirty());

@@ -7,6 +7,7 @@
 
 import type { DesignDoc, Item, Layer, Settings } from './types';
 import { DEFAULT_SETTINGS } from './types';
+import { t, onBeforeLangSwitch } from './i18n';
 
 export type StoreEvent = 'doc' | 'selection' | 'settings' | 'hover';
 type Listener = (ev: StoreEvent) => void;
@@ -21,8 +22,8 @@ export function uid(prefix = 'it'): string {
 }
 
 function emptyDoc(): DesignDoc {
-  const layer: Layer = { id: 'layer_1', name: 'Calque 1', visible: true, locked: false };
-  return { version: 1, name: 'Sans titre', items: [], layers: [layer], activeLayerId: layer.id };
+  const layer: Layer = { id: 'layer_1', name: t('layer.default', { n: 1 }), visible: true, locked: false };
+  return { version: 1, name: t('doc.untitled'), items: [], layers: [layer], activeLayerId: layer.id };
 }
 
 const clone = <T>(v: T): T => structuredClone(v);
@@ -55,6 +56,7 @@ class Store {
   constructor() {
     this.doc = this.load() ?? emptyDoc();
     this.settings = { ...DEFAULT_SETTINGS, ...this.loadSettings() };
+    onBeforeLangSwitch(() => this.flushSave());
   }
 
   // ── subscription ───────────────────────────────────────────
@@ -206,9 +208,14 @@ class Store {
   }
   private scheduleSave() {
     clearTimeout(this.saveTimer);
-    this.saveTimer = window.setTimeout(() => {
-      try { localStorage.setItem(LS_DOC, JSON.stringify(this.doc)); } catch { /* quota / private mode */ }
-    }, 300);
+    this.saveTimer = window.setTimeout(() => this.flushSave(), 300);
+  }
+  /** Write the document (and settings) to localStorage now, cancelling any pending autosave. */
+  flushSave() {
+    clearTimeout(this.saveTimer);
+    this.saveTimer = 0;
+    try { localStorage.setItem(LS_DOC, JSON.stringify(this.doc)); } catch { /* quota / private mode */ }
+    this.saveSettings();
   }
   private saveSettings() {
     try { localStorage.setItem(LS_SETTINGS, JSON.stringify(this.settings)); } catch { /* ignore */ }

@@ -22,6 +22,14 @@ Concepteur de meubles à base d'étagères IKEA **KALLAX**, rendu « plan d'arch
 - Finitions (blanc, blanc brillant, brun noir, chêne blanchi, chêne, noyer, gris) : choix global + par étagère, rendu « Couleurs des finitions »
 - Prix IKEA France (nov. 2026) : « dès … » dans la bibliothèque, liste de courses chiffrée, total de la composition
 
+- FR / EN (langue du navigateur par défaut, choix dans le menu « … »)
+- Objets accrochés en hauteur : glissés sur un mur, ils suivent le curseur ; déplacés, ils gardent leur hauteur
+- Projets stockés uniquement dans le navigateur ; export JSON par projet ou « Tout exporter » (sauvegarde), réimportables
+
+## Projet par défaut
+
+Les nouveaux visiteurs démarrent sur `public/default-project.json` (export JSON d'un projet). Sans ce fichier, une petite démo est chargée.
+
 ## Dimensions exactes utilisées
 
 Hors-tout = 35 × n + 6,5 cm → 41,5 · 76,5 · 111,5 · 146,5 · 181,5. Profondeur 39 cm.

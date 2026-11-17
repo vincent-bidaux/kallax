@@ -34,7 +34,7 @@ export class Popover {
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); this.close(true); }
       if (opts.role === 'menu' && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
         e.preventDefault();
-        const items = [...this.el.querySelectorAll<HTMLElement>('[role=menuitem]:not([disabled])')];
+        const items = [...this.el.querySelectorAll<HTMLElement>('[role=menuitem]:not([disabled]), [role=menuitemradio]:not([disabled])')];
         const i = items.indexOf(document.activeElement as HTMLElement);
         const j = e.key === 'ArrowDown' ? (i + 1) % items.length : (i - 1 + items.length) % items.length;
         items[j]?.focus();
@@ -106,6 +106,12 @@ export interface MenuItem {
   action: () => void;
   destructive?: boolean;
   separatorBefore?: boolean;
+  /** Checkable item (menuitemradio): shows a checkmark in the icon column. */
+  checked?: boolean;
+  /** Small section heading shown above the item (after the separator). */
+  heading?: string;
+  /** `lang` attribute of the label (e.g. a language name in its own language). */
+  lang?: string;
 }
 
 /** Fill a popover with menu items (role=menu). */
@@ -113,9 +119,16 @@ export function fillMenu(pop: Popover, items: MenuItem[]) {
   pop.body.classList.add('menu');
   for (const it of items) {
     if (it.separatorBefore) pop.body.appendChild(h('div', { class: 'menu-sep', role: 'separator' }));
-    const b = h('button', { type: 'button', role: 'menuitem', class: `menu-item ${it.destructive ? 'destructive' : ''}`, tabindex: '-1' },
-      it.icon ? icon(it.icon, 15) : h('span', { class: 'icon-spacer' }),
-      h('span', { class: 'menu-label' }, it.label),
+    if (it.heading) pop.body.appendChild(h('div', { class: 'menu-heading', 'aria-hidden': 'true' }, it.heading));
+    const checkable = it.checked !== undefined;
+    const b = h('button', {
+      type: 'button', role: checkable ? 'menuitemradio' : 'menuitem', tabindex: '-1',
+      class: `menu-item ${it.destructive ? 'destructive' : ''}${it.checked ? ' checked' : ''}`,
+      'aria-checked': checkable ? String(!!it.checked) : undefined,
+    },
+      checkable ? (it.checked ? icon('check', 15, 'menu-check') : h('span', { class: 'icon-spacer' }))
+        : it.icon ? icon(it.icon, 15) : h('span', { class: 'icon-spacer' }),
+      h('span', { class: 'menu-label', lang: it.lang }, it.label),
       it.kbd ? h('kbd', null, it.kbd) : null);
     b.addEventListener('click', () => { pop.close(); it.action(); });
     b.addEventListener('pointermove', () => { if (document.activeElement !== b) b.focus({ preventScroll: true }); });

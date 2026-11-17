@@ -3,6 +3,7 @@
 import { h, parseNum } from './dom';
 import { icon } from './icons';
 import { fmtCm } from '../core/kallax';
+import { t } from '../core/i18n';
 
 // ── tooltips ─────────────────────────────────────────────────
 let tipEl: HTMLElement | null = null;
@@ -223,8 +224,8 @@ export function stepper(o: {
 }): Stepper {
   let value = o.value;
   const out = h('output', { class: 'stepper-val', 'aria-live': 'polite' }, String(value));
-  const dec = h('button', { type: 'button', class: 'stepper-btn', 'aria-label': `${o.label} : moins` }, icon('minus', 13));
-  const inc = h('button', { type: 'button', class: 'stepper-btn', 'aria-label': `${o.label} : plus` }, icon('plus', 13));
+  const dec = h('button', { type: 'button', class: 'stepper-btn', 'aria-label': t('ctl.decrease', { label: o.label }) }, icon('minus', 13));
+  const inc = h('button', { type: 'button', class: 'stepper-btn', 'aria-label': t('ctl.increase', { label: o.label }) }, icon('plus', 13));
   const group = h('div', { class: 'stepper', role: 'group', 'aria-label': o.label }, dec, out, inc);
   const el = h('div', { class: 'field field-stepper' }, h('span', { class: 'field-label' }, o.label), group);
   let disabled = false;

@@ -442,6 +442,9 @@ kbd {
 .menu-item kbd { background: transparent; box-shadow: none; }
 .icon-spacer { width: 15px; }
 .menu-sep { height: 1px; margin: 4px 9px; background: var(--sep-strong); }
+.menu-heading { padding: 4px 9px 2px; font-size: 11px; font-weight: 600; color: var(--text-3, var(--text-2)); letter-spacing: .01em; }
+.menu-item .menu-check { color: var(--accent); }
+.menu-item:hover .menu-check, .menu-item:focus-visible .menu-check { color: var(--text-on-accent); }
 
 /* ── tooltip ──────────────────────────────────────────────── */
 .tooltip {

@@ -1,14 +1,15 @@
 // Left sidebar: segmented tabs Bibliothèque | Calques.
 import { h } from './dom';
 import { segmented } from './controls';
+import { t } from '../core/i18n';
 import { buildLibrary } from './sidebar-library';
 import { buildLayers } from './sidebar-layers';
 
 const LS_TAB = 'kallax-designer:sidebar-tab';
 
 export function buildSidebar(host: HTMLElement) {
-  const libPane = h('div', { class: 'pane', id: 'pane-lib', role: 'tabpanel', 'aria-label': 'Bibliothèque' });
-  const layPane = h('div', { class: 'pane', id: 'pane-layers', role: 'tabpanel', 'aria-label': 'Calques' });
+  const libPane = h('div', { class: 'pane', id: 'pane-lib', role: 'tabpanel', 'aria-label': t('common.library') });
+  const layPane = h('div', { class: 'pane', id: 'pane-layers', role: 'tabpanel', 'aria-label': t('common.layers') });
   let tab = (localStorage.getItem(LS_TAB) as 'lib' | 'layers') || 'lib';
   const show = (t: 'lib' | 'layers') => {
     tab = t;
@@ -17,8 +18,8 @@ export function buildSidebar(host: HTMLElement) {
     try { localStorage.setItem(LS_TAB, t); } catch { /* ignore */ }
   };
   const tabs = segmented<'lib' | 'layers'>({
-    ariaLabel: 'Panneau', value: tab,
-    options: [{ value: 'lib', label: 'Bibliothèque', icon: 'books' }, { value: 'layers', label: 'Calques', icon: 'layers' }],
+    ariaLabel: t('sidebar.panelAria'), value: tab,
+    options: [{ value: 'lib', label: t('common.library'), icon: 'books' }, { value: 'layers', label: t('common.layers'), icon: 'layers' }],
     onChange: show,
     cls: 'sidebar-tabs',
   });

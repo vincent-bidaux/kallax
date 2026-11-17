@@ -6,6 +6,7 @@ import { rotateVec, rotatedOrientation, type Axis3 } from '../core/orient';
 import { itemBox, unionBox, worldSize, boxesOverlap } from '../core/kallax';
 import { ui } from './context';
 import { toast } from '../ui/dom';
+import { t } from '../core/i18n';
 
 const r3 = (v: number) => Math.round(v * 1000) / 1000;
 
@@ -16,7 +17,7 @@ export function editableSelection(): Item[] {
 
 function warnLocked(): boolean {
   if (store.selection.length && !editableSelection().length) {
-    toast('Calque verrouillé — déverrouillez-le pour modifier');
+    toast(t('cmd.locked'));
     return true;
   }
   return false;
@@ -146,10 +147,10 @@ export function setProjection(p: Settings['projection']) {
 }
 
 export function toggleProjection() {
-  if (store.settings.view === 'cavalier') { toast('La cavalière est toujours orthographique'); return; }
+  if (store.settings.view === 'cavalier') { toast(t('cmd.cavalierOrtho')); return; }
   const p = store.settings.projection === 'perspective' ? 'orthographic' : 'perspective';
   setProjection(p);
-  toast(p === 'perspective' ? 'Projection : perspective' : 'Projection : orthographique', 1400);
+  toast(p === 'perspective' ? t('cmd.projPersp') : t('cmd.projOrtho'), 1400);
 }
 
 export function toggleSetting(k: 'measureItems' | 'measureGlobal' | 'showGrid' | 'showAxes' | 'snapGrid' | 'snapItems' | 'shadows' | 'transparency') {

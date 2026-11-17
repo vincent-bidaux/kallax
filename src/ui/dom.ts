@@ -1,4 +1,5 @@
 // Tiny DOM helpers (no framework).
+import { t } from '../core/i18n';
 
 type Child = Node | string | number | null | undefined | false;
 type Props = {
@@ -67,7 +68,7 @@ export function isTyping(target: EventTarget | null = document.activeElement): b
 export const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 /** Platform modifier glyph for shortcut labels. */
 export const MOD = isMac ? '⌘' : 'Ctrl+';
-export const SHIFT = isMac ? '⇧' : 'Maj+';
+export const SHIFT = isMac ? '⇧' : t('key.shift');
 
 /** Parse a French or English decimal ("12,5" / "12.5"). */
 export function parseNum(s: string): number | null {

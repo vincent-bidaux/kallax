@@ -1,5 +1,6 @@
 // Kallax Designer — wiring.
 import './styles.css';
+import { t } from './core/i18n';
 import { store } from './core/store';
 import { THEMES } from './core/theme';
 import { Viewport } from './render/viewport';
@@ -40,10 +41,10 @@ function boot() {
   root.replaceChildren();
 
   const toolbar = h('header', { class: 'toolbar', id: 'toolbar' });
-  const sidebar = h('aside', { class: 'sidebar', id: 'sidebar', 'aria-label': 'Bibliothèque et calques' });
+  const sidebar = h('aside', { class: 'sidebar', id: 'sidebar', 'aria-label': t('main.sidebarAria') });
   const viewportEl = h('div', { id: 'viewport', class: 'viewport' });
-  const main = h('main', { class: 'stage', 'aria-label': 'Vue 3D' }, viewportEl);
-  const inspector = h('aside', { class: 'inspector', id: 'inspector', 'aria-label': 'Inspecteur' });
+  const main = h('main', { class: 'stage', 'aria-label': t('main.stageAria') }, viewportEl);
+  const inspector = h('aside', { class: 'inspector', id: 'inspector', 'aria-label': t('inspector.title') });
   const status = h('footer', { class: 'statusbar', id: 'statusbar' });
   root.append(toolbar, sidebar, main, inspector, status);
 
@@ -104,9 +105,9 @@ function boot() {
     if (e.target === root || e.target === sidebar || e.target === inspector) viewport.requestRender();
   });
 
-  if (seedIfFirstLaunch()) {
-    requestAnimationFrame(() => viewport.zoomToFit(false));
-  }
+  seedIfFirstLaunch().then(loaded => {
+    if (loaded) requestAnimationFrame(() => viewport.zoomToFit(false));
+  });
   requestAnimationFrame(() => document.documentElement.classList.add('ready'));
 }
 

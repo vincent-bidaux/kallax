@@ -7,6 +7,7 @@ import { store } from '../core/store';
 import { ui } from './context';
 import { computePlacement, boxesFree, boxAt } from './placement';
 import { toast } from '../ui/dom';
+import { t } from '../core/i18n';
 import { uid } from '../core/store';
 
 interface MoveGesture {
@@ -87,7 +88,7 @@ export function installSelectMove(vp: ViewportAPI) {
 
   const applyMove = (ev: PointerEvent) => {
     if (!g) return;
-    const res = computePlacement({ item: g.primary, clientX: ev.clientX, clientY: ev.clientY, ignoreIds: g.ids, grab: g.grab });
+    const res = computePlacement({ item: g.primary, clientX: ev.clientX, clientY: ev.clientY, ignoreIds: g.ids, grab: g.grab, keepHeight: g.orig.get(g.primary.id)?.z ?? g.primary.position.z });
     if (!res) return;
     const p0 = g.orig.get(g.primary.id)!;
     let d = { x: res.position.x - p0.x, y: res.position.y - p0.y, z: res.position.z - p0.z };
@@ -156,7 +157,7 @@ export function installSelectMove(vp: ViewportAPI) {
       if (commit && g.valid) store.commit();
       else {
         store.cancelPreview();
-        if (commit && !g.valid) toast(g.duplicate ? 'Position invalide — copie annulée' : 'Position invalide — déplacement annulé');
+        if (commit && !g.valid) toast(g.duplicate ? t('cmd.copyInvalid') : t('cmd.moveInvalid'));
       }
     } else if (commit && g.collapseTo) {
       store.select([g.collapseTo]);

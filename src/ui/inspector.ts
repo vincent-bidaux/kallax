@@ -11,8 +11,12 @@ import { finishPicker } from './finish-picker';
 import { bomList, bomText, buildTotalFooter, currentBom } from './bom';
 import * as cmd from '../interaction/commands';
 import { MOD } from './dom';
+import { t, tn } from '../core/i18n';
 
 interface Panel { el: HTMLElement; update(): void }
+
+/** Underframe suffix of auto-named units, in either language (" + piètement" / " + underframe"). */
+const LEGS_SUFFIX_RE = / \+ (piètement|underframe)$/;
 
 const dims3 = (w: number, d: number, hh: number) => `${fmtCm(w)} × ${fmtCm(d)} × ${fmtCm(hh)}`;
 
@@ -21,8 +25,8 @@ function dimsBlock(w: number, d: number, hh: number): HTMLElement {
     h('div', { class: 'dim-cell' }, h('span', { class: `dim-k axis-${axis}` }, k), h('span', { class: 'dim-v' }, fmtCm(v)));
   const sep = (t: string, cls: string) =>
     h('div', { class: `dim-cell ${cls}`, 'aria-hidden': 'true' }, h('span', { class: 'dim-k' }, '\u00a0'), h('span', { class: 'dim-v' }, t));
-  return h('div', { class: 'dims-card', role: 'group', 'aria-label': `Dimensions ${dims3(w, d, hh)} cm` },
-    cell('L', w, 'x'), sep('×', 'dim-x'), cell('P', d, 'y'), sep('×', 'dim-x'), cell('H', hh, 'z'),
+  return h('div', { class: 'dims-card', role: 'group', 'aria-label': t('dim.aria', { dims: dims3(w, d, hh) }) },
+    cell(t('dim.w'), w, 'x'), sep('×', 'dim-x'), cell(t('dim.d'), d, 'y'), sep('×', 'dim-x'), cell(t('dim.h'), hh, 'z'),
     sep('cm', 'dim-unit'));
 }
 
@@ -30,7 +34,7 @@ function dimsBlock(w: number, d: number, hh: number): HTMLElement {
 function notSoldIn(ks: KallaxItem[], f: FinishId): string | null {
   const miss = new Set<string>();
   for (const k of ks) if (frameSold(k.cols, k.rows) && !frameFinishes(k.cols, k.rows).includes(f)) miss.add(`${k.cols}×${k.rows}`);
-  return miss.size ? `Non proposée en ${[...miss].join(', ')}` : null;
+  return miss.size ? t('insp.notSoldIn', { list: [...miss].join(', ') }) : null;
 }
 
 /** Price card for one or several KALLAX: total + breakdown + BOM warnings. */
@@ -42,15 +46,15 @@ function priceCard(ks: KallaxItem[], label: string): HTMLElement {
   const tot = (ls: typeof b.lines) => ls.reduce((s, l) => s + (l.total ?? 0), 0);
   const cnt = (ls: typeof b.lines) => ls.reduce((s, l) => s + l.qty, 0);
   const nb = (t: string) => t.replace(/ /g, '\u00a0');
-  if (fr.length) parts.push(fr.every(l => l.total == null) ? 'cadre sur mesure' : `${cnt(fr) > 1 ? `${cnt(fr)} cadres` : 'cadre'} ${fmtEur(tot(fr))}`);
-  if (lg.length) parts.push(`piètement${cnt(lg) > 1 ? 's' : ''} ${lg.every(l => l.total == null) ? '—' : fmtEur(tot(lg))}`);
-  if (ins.length) parts.push(`${cnt(ins)} habillage${cnt(ins) > 1 ? 's' : ''} ${fmtEur(tot(ins))}`);
+  if (fr.length) parts.push(fr.every(l => l.total == null) ? t('insp.customFrame') : tn('insp.frames', cnt(fr), { price: fmtEur(tot(fr)) }));
+  if (lg.length) parts.push(tn('insp.legs', cnt(lg), { price: lg.every(l => l.total == null) ? '—' : fmtEur(tot(lg)) }));
+  if (ins.length) parts.push(tn('insp.inserts', cnt(ins), { price: fmtEur(tot(ins)) }));
   // insert notes don't name the fitting: prefix it ("Bloc 2 tiroirs : pas en noyer — brun noir")
   const notes = [...new Set(b.lines.filter(l => l.note).map(l => l.kind === 'insert'
-    ? `${l.label.replace(/^KALLAX /, '').replace(/^./, c => c.toUpperCase())} : ${l.note!.replace(/^./, c => c.toLowerCase())}`
+    ? t('insp.insertNote', { label: l.label.replace(/^KALLAX /, '').replace(/^./, c => c.toUpperCase()), note: l.note!.replace(/^./, c => c.toLowerCase()) })
     : l.note!))];
   const priced = b.lines.some(l => l.total != null);
-  return h('div', { class: 'price-card', role: 'group', 'aria-label': `${label} : ${priced ? fmtEur(b.total) : 'non chiffré'}` },
+  return h('div', { class: 'price-card', role: 'group', 'aria-label': t('insp.priceAria', { label, price: priced ? fmtEur(b.total) : t('insp.unpriced') }) },
     h('div', { class: 'price-main' },
       h('span', { class: 'price-k' }, label),
       h('span', { class: `price-v${priced ? '' : ' none'}` }, priced ? fmtEur(b.total) : '—')),
@@ -76,44 +80,44 @@ function summaryPanel(): Panel {
     el.append(
       h('div', { class: 'insp-hero' },
         h('div', { class: 'hero-icon' }, icon('cube', 22)),
-        h('div', null, h('div', { class: 'hero-title' }, 'Composition'), h('div', { class: 'hero-sub' }, store.doc.name))),
+        h('div', null, h('div', { class: 'hero-title' }, t('insp.composition')), h('div', { class: 'hero-sub' }, store.doc.name))),
       h('div', { class: 'stats' },
-        stat('Objets', String(all.length)),
-        stat('Cases', String(cells)),
-        stat('Calques', String(store.doc.layers.length))),
+        stat(t('common.objects'), String(all.length)),
+        stat(t('insp.cells'), String(cells)),
+        stat(t('common.layers'), String(store.doc.layers.length))),
     );
-    if (u) el.append(group('Hors-tout', dimsBlock(u.max.x - u.min.x, u.max.y - u.min.y, u.max.z - u.min.z)));
+    if (u) el.append(group(t('insp.overall'), dimsBlock(u.max.x - u.min.x, u.max.y - u.min.y, u.max.z - u.min.z)));
     // finish (global) + basket variant
     const gf = store.doc.finish ?? DEFAULT_FINISH;
     const fp = finishPicker({
-      title: 'Finition', ariaLabel: 'Finition globale des Kallax',
+      title: t('common.finish'), ariaLabel: t('insp.globalFinishAria'),
       onPick: f => { if (f && f !== (store.doc.finish ?? DEFAULT_FINISH)) store.update(d => { d.finish = f; }); },
     });
     const visK = items.filter((i): i is KallaxItem => i.kind === 'kallax');
     fp.set({ value: gf, global: gf, unavailable: f => notSoldIn(visK, f) });
     const overrides = kallax.filter(k => k.finish && k.finish !== gf).length;
     if (overrides) fp.el.append(h('p', { class: 'hint finish-hint' },
-      overrides > 1 ? `${overrides} meubles ont leur propre finition.` : '1 meuble a sa propre finition.'));
+      tn('insp.overrides', overrides)));
     const basket = segmented<BasketVariant>({
-      ariaLabel: 'Paniers BRANÄS', size: 'sm', value: store.doc.basket ?? 'naturel', cls: 'basket-seg',
-      options: BASKET_VARIANTS.map(v => ({ value: v.id, label: v.id === 'naturel' ? 'Naturel' : 'Blanc', tip: `${v.label} · ${fmtEur(v.price)}` })),
+      ariaLabel: t('insp.basketsAria'), size: 'sm', value: store.doc.basket ?? 'naturel', cls: 'basket-seg',
+      options: BASKET_VARIANTS.map(v => ({ value: v.id, label: v.id === 'naturel' ? t('basket.naturelShort') : t('basket.blancShort'), tip: `${v.label} · ${fmtEur(v.price)}` })),
       onChange: v => { if (v !== (store.doc.basket ?? 'naturel')) store.update(d => { d.basket = v; }); },
     });
-    fp.el.append(h('div', { class: 'basket-row' }, h('span', { class: 'basket-label' }, 'Paniers'), basket.el));
+    fp.el.append(h('div', { class: 'basket-row' }, h('span', { class: 'basket-label' }, t('insp.baskets')), basket.el));
     el.append(fp.el);
 
     // priced shopping list
     const bom = currentBom();
     const copy = bom.lines.length ? button({
-      icon: 'duplicate', label: 'Copier', cls: 'mini-btn text', iconSize: 13,
-      tip: 'Copier la liste chiffrée dans le presse-papiers',
+      icon: 'duplicate', label: t('insp.copy'), cls: 'mini-btn text', iconSize: 13,
+      tip: t('insp.copyTip'),
       onClick: () => {
-        navigator.clipboard?.writeText(bomText(bom, store.doc.name)).then(() => toast('Liste copiée'), () => toast('Copie impossible'));
+        navigator.clipboard?.writeText(bomText(bom, store.doc.name)).then(() => toast(t('insp.copied')), () => toast(t('insp.copyFailed')));
       },
     }) : null;
     el.append(h('div', { class: 'insp-group bom-group' },
-      h('div', { class: 'insp-title-row' }, h('h4', { class: 'insp-title' }, 'Liste de courses'), copy), bomList(bom)));
-    el.append(h('p', { class: 'hint insp-hint' }, 'Sélectionnez un objet pour modifier sa position, sa taille ou le dupliquer.'));
+      h('div', { class: 'insp-title-row' }, h('h4', { class: 'insp-title' }, t('insp.shoppingList')), copy), bomList(bom)));
+    el.append(h('p', { class: 'hint insp-hint' }, t('insp.selectHint')));
   };
   update();
   return { el, update };
@@ -130,25 +134,25 @@ function itemPanel(id: string): Panel {
   const isK = it0.kind === 'kallax';
   const step = () => store.settings.gridCell;
 
-  const nameField = textField({ value: it0.name, ariaLabel: 'Nom de l’objet', cls: 'hero-name', onCommit: v => store.patchItem(id, { name: v }) });
+  const nameField = textField({ value: it0.name, ariaLabel: t('insp.nameAria'), cls: 'hero-name', onCommit: v => store.patchItem(id, { name: v }) });
   const typeLabel = h('div', { class: 'hero-sub' });
   const heroIcon = h('div', { class: 'hero-icon' }, icon(isK ? 'grid' : shapeIcon(it0.shape), 22));
-  const lockBanner = h('div', { class: 'banner', role: 'note' }, icon('lock', 13), 'Calque verrouillé — lecture seule');
-  const overlapBanner = h('div', { class: 'banner warn', role: 'alert' }, icon('warning', 13), 'Chevauche un autre objet');
+  const lockBanner = h('div', { class: 'banner', role: 'note' }, icon('lock', 13), t('insp.lockedBanner'));
+  const overlapBanner = h('div', { class: 'banner warn', role: 'alert' }, icon('warning', 13), t('insp.overlap'));
   const dimsHost = h('div');
 
-  const fx = numberField({ label: 'X', axis: 'x', ariaLabel: 'Position X (cm)', value: it0.position.x, step: step(), suffix: 'cm', onCommit: v => cmd.moveItemTo(id, { x: v }) });
-  const fy = numberField({ label: 'Y', axis: 'y', ariaLabel: 'Position Y (cm)', value: it0.position.y, step: step(), suffix: 'cm', onCommit: v => cmd.moveItemTo(id, { y: v }) });
-  const fz = numberField({ label: 'Z', axis: 'z', ariaLabel: 'Position Z (cm)', value: it0.position.z, step: step(), min: 0, suffix: 'cm', onCommit: v => cmd.moveItemTo(id, { z: v }) });
-  tip(fx.el, 'Coin gauche (X) — glisser l’étiquette pour ajuster');
-  tip(fy.el, 'Coin avant (Y) — glisser l’étiquette pour ajuster');
-  tip(fz.el, 'Base (Z) — glisser l’étiquette pour ajuster');
+  const fx = numberField({ label: 'X', axis: 'x', ariaLabel: t('aria.posX'), value: it0.position.x, step: step(), suffix: 'cm', onCommit: v => cmd.moveItemTo(id, { x: v }) });
+  const fy = numberField({ label: 'Y', axis: 'y', ariaLabel: t('aria.posY'), value: it0.position.y, step: step(), suffix: 'cm', onCommit: v => cmd.moveItemTo(id, { y: v }) });
+  const fz = numberField({ label: 'Z', axis: 'z', ariaLabel: t('aria.posZ'), value: it0.position.z, step: step(), min: 0, suffix: 'cm', onCommit: v => cmd.moveItemTo(id, { z: v }) });
+  tip(fx.el, t('insp.tipX'));
+  tip(fy.el, t('insp.tipY'));
+  tip(fz.el, t('insp.tipZ'));
 
   const rotRows = (['x', 'y', 'z'] as Axis3[]).map(ax => {
     const val = h('output', { class: 'rot-val' });
     const kb = ax === 'z' ? 'R' : ax === 'x' ? 'X' : 'Y';
-    const m = button({ icon: 'rotateCw', label: `Pivoter de −90° autour de ${ax.toUpperCase()}`, iconOnly: true, kbd: `⇧${kb}`, cls: 'seg-like', onClick: () => rotateOne(-90, ax) });
-    const p = button({ icon: 'rotateCcw', label: `Pivoter de +90° autour de ${ax.toUpperCase()}`, iconOnly: true, kbd: kb, cls: 'seg-like', onClick: () => rotateOne(90, ax) });
+    const m = button({ icon: 'rotateCw', label: t('insp.rotMinus', { axis: ax.toUpperCase() }), iconOnly: true, kbd: `⇧${kb}`, cls: 'seg-like', onClick: () => rotateOne(-90, ax) });
+    const p = button({ icon: 'rotateCcw', label: t('insp.rotPlus', { axis: ax.toUpperCase() }), iconOnly: true, kbd: kb, cls: 'seg-like', onClick: () => rotateOne(90, ax) });
     const row = h('div', { class: 'rot-row rot-axis' }, h('span', { class: `rot-ax ax-${ax}` }, ax.toUpperCase()), m, val, p);
     return { ax, val, m, p, row };
   });
@@ -163,10 +167,10 @@ function itemPanel(id: string): Panel {
   let fw: NumberField | null = null, fd: NumberField | null = null, fh: NumberField | null = null;
   let sizeGroup: HTMLElement;
   if (it0.kind === 'kallax') {
-    colsSt = stepper({ label: 'Colonnes', value: it0.cols, min: 1, max: MAX_CELLS, onChange: v => store.update(d => { const x = d.items.find(i => i.id === id); if (x && x.kind === 'kallax') { x.name = renameKallax(x, x.cols, x.rows, v, x.rows); x.cols = v; } }) });
-    rowsSt = stepper({ label: 'Lignes', value: it0.rows, min: 1, max: MAX_CELLS, onChange: v => store.update(d => { const x = d.items.find(i => i.id === id); if (x && x.kind === 'kallax') { x.name = renameKallax(x, x.cols, x.rows, x.cols, v); x.rows = v; } }) });
+    colsSt = stepper({ label: t('insp.columns'), value: it0.cols, min: 1, max: MAX_CELLS, onChange: v => store.update(d => { const x = d.items.find(i => i.id === id); if (x && x.kind === 'kallax') { x.name = renameKallax(x, x.cols, x.rows, v, x.rows); x.cols = v; } }) });
+    rowsSt = stepper({ label: t('insp.rows'), value: it0.rows, min: 1, max: MAX_CELLS, onChange: v => store.update(d => { const x = d.items.find(i => i.id === id); if (x && x.kind === 'kallax') { x.name = renameKallax(x, x.cols, x.rows, x.cols, v); x.rows = v; } }) });
     legsSw = switchRow({
-      label: 'Piètement', hint: `+${fmtCm(KALLAX.legs)} cm · 2×2, 2×4, 4×3, 4×4`, icon: 'arrowUp', value: !!it0.legs,
+      label: t('insp.legs'), hint: `+${fmtCm(KALLAX.legs)} cm · 2×2, 2×4, 4×3, 4×4`, icon: 'arrowUp', value: !!it0.legs,
       onChange: v => store.update(d => {
         const x = d.items.find(i => i.id === id);
         if (!x || x.kind !== 'kallax' || !!x.legs === v) return;
@@ -182,10 +186,10 @@ function itemPanel(id: string): Panel {
           if (moved.some(m => xyOverlap(m, ob))) { moved.push(ob); o.position = { ...o.position, z: o.position.z + dz }; }
         }
         x.legs = v;
-        x.name = x.name.replace(/ \+ piètement$/, '') + (v && /^Kallax \d×\d/.test(x.name) ? ' + piètement' : '');
+        x.name = x.name.replace(LEGS_SUFFIX_RE, '') + (v && /^Kallax \d×\d/.test(x.name) ? t('kallax.legsSuffix') : '');
       }),
     });
-    sizeGroup = group('Cases', h('div', { class: 'steppers' }, colsSt.el, rowsSt.el), legsSw.el);
+    sizeGroup = group(t('insp.cells'), h('div', { class: 'steppers' }, colsSt.el, rowsSt.el), legsSw.el);
   } else if (it0.shape === 'cylinder' || it0.shape === 'square') {
     const patchCyl = (k: 'diameter' | 'length', v: number) => store.update(d => {
       const x = d.items.find(i => i.id === id);
@@ -195,29 +199,29 @@ function itemPanel(id: string): Panel {
     });
     const c0 = cylinderDims(it0);
     const sq = it0.shape === 'square';
-    fw = numberField({ label: sq ? '□' : 'Ø', ariaLabel: sq ? 'Côté (cm)' : 'Diamètre (cm)', value: c0.diameter, step: 0.5, min: 0.5, suffix: 'cm', onCommit: v => patchCyl('diameter', v) });
-    fh = numberField({ label: 'L', ariaLabel: 'Longueur (cm)', value: c0.length, step: 1, min: 0.5, suffix: 'cm', onCommit: v => patchCyl('length', v) });
-    sizeGroup = group(sq ? 'Poutre carrée' : 'Poutre ronde', h('div', { class: 'fields-2' }, fw.el, fh.el));
+    fw = numberField({ label: sq ? '□' : 'Ø', ariaLabel: sq ? t('aria.side') : t('aria.diameter'), value: c0.diameter, step: 0.5, min: 0.5, suffix: 'cm', onCommit: v => patchCyl('diameter', v) });
+    fh = numberField({ label: t('dim.len'), ariaLabel: t('aria.length'), value: c0.length, step: 1, min: 0.5, suffix: 'cm', onCommit: v => patchCyl('length', v) });
+    sizeGroup = group(sq ? t('obj.square') : t('obj.round'), h('div', { class: 'fields-2' }, fw.el, fh.el));
   } else if (it0.shape === 'wall') {
     const patchSize = (k: 'w' | 'h', v: number) => store.update(d => {
       const x = d.items.find(i => i.id === id); if (x && x.kind === 'block') x.size = { ...x.size, [k]: v };
     });
-    fw = numberField({ label: 'L', axis: 'x', ariaLabel: 'Largeur (cm)', value: it0.size.w, step: 1, min: 1, suffix: 'cm', onCommit: v => patchSize('w', v) });
-    fh = numberField({ label: 'H', axis: 'z', ariaLabel: 'Hauteur (cm)', value: it0.size.h, step: 1, min: 1, suffix: 'cm', onCommit: v => patchSize('h', v) });
-    sizeGroup = group('Mur (plan)', h('div', { class: 'fields-2' }, fw.el, fh.el));
+    fw = numberField({ label: t('dim.w'), axis: 'x', ariaLabel: t('aria.width'), value: it0.size.w, step: 1, min: 1, suffix: 'cm', onCommit: v => patchSize('w', v) });
+    fh = numberField({ label: t('dim.h'), axis: 'z', ariaLabel: t('aria.height'), value: it0.size.h, step: 1, min: 1, suffix: 'cm', onCommit: v => patchSize('h', v) });
+    sizeGroup = group(t('insp.wallPlane'), h('div', { class: 'fields-2' }, fw.el, fh.el));
   } else {
     const patchSize = (k: 'w' | 'd' | 'h', v: number) => store.update(d => {
       const x = d.items.find(i => i.id === id); if (x && x.kind === 'block') x.size = { ...x.size, [k]: v };
     });
-    fw = numberField({ label: 'L', axis: 'x', ariaLabel: 'Largeur (cm)', value: it0.size.w, step: 1, min: 0.5, suffix: 'cm', onCommit: v => patchSize('w', v) });
-    fd = numberField({ label: 'P', axis: 'y', ariaLabel: 'Profondeur (cm)', value: it0.size.d, step: 1, min: 0.5, suffix: 'cm', onCommit: v => patchSize('d', v) });
-    fh = numberField({ label: 'H', axis: 'z', ariaLabel: 'Hauteur (cm)', value: it0.size.h, step: 1, min: 0.5, suffix: 'cm', onCommit: v => patchSize('h', v) });
-    sizeGroup = group(it0.shape === 'window' ? 'Fenêtre' : 'Taille du bloc', h('div', { class: 'fields-3' }, fw.el, fd.el, fh.el));
+    fw = numberField({ label: t('dim.w'), axis: 'x', ariaLabel: t('aria.width'), value: it0.size.w, step: 1, min: 0.5, suffix: 'cm', onCommit: v => patchSize('w', v) });
+    fd = numberField({ label: t('dim.d'), axis: 'y', ariaLabel: t('aria.depth'), value: it0.size.d, step: 1, min: 0.5, suffix: 'cm', onCommit: v => patchSize('d', v) });
+    fh = numberField({ label: t('dim.h'), axis: 'z', ariaLabel: t('aria.height'), value: it0.size.h, step: 1, min: 0.5, suffix: 'cm', onCommit: v => patchSize('h', v) });
+    sizeGroup = group(it0.shape === 'window' ? t('obj.window') : t('insp.blockSize'), h('div', { class: 'fields-3' }, fw.el, fd.el, fh.el));
   }
 
   const priceHost = h('div', { class: 'price-host' });
   const finishP = isK ? finishPicker({
-    withGlobal: true, ariaLabel: 'Finition de ce Kallax',
+    withGlobal: true, ariaLabel: t('insp.thisFinishAria'),
     onPick: f => {
       const cur = store.getItem(id);
       if (!cur || cur.kind !== 'kallax' || store.isLocked(cur) || (cur.finish ?? null) === f) return;
@@ -228,24 +232,24 @@ function itemPanel(id: string): Panel {
     },
   }) : null;
 
-  const layerSel = h('select', { class: 'popup', 'aria-label': 'Calque' });
+  const layerSel = h('select', { class: 'popup', 'aria-label': t('common.layer') });
   layerSel.addEventListener('change', () => store.patchItem(id, { layerId: layerSel.value }));
   const layerWrap = h('div', { class: 'popup-wrap' }, layerSel, icon('chevronDown', 12, 'popup-chev'));
 
   const dupBtns = dupRow();
-  const delBtn = button({ icon: 'trash', label: 'Supprimer', kbd: '⌫', cls: 'btn-destructive wide', onClick: () => { if (!store.selection.includes(id)) store.select([id]); cmd.deleteSelection(); } });
+  const delBtn = button({ icon: 'trash', label: t('common.delete'), kbd: '⌫', cls: 'btn-destructive wide', onClick: () => { if (!store.selection.includes(id)) store.select([id]); cmd.deleteSelection(); } });
 
   el.append(
     h('div', { class: 'insp-hero' }, heroIcon, h('div', { class: 'hero-text' }, nameField.el, typeLabel)),
     lockBanner, overlapBanner,
     dimsHost,
     priceHost,
-    group('Position', h('div', { class: 'fields-3' }, fx.el, fy.el, fz.el)),
-    group('Rotation (pas de 90°)', h('div', { class: 'rot-rows' }, rotRows.map(r => r.row))),
+    group(t('common.position'), h('div', { class: 'fields-3' }, fx.el, fy.el, fz.el)),
+    group(t('insp.rotation'), h('div', { class: 'rot-rows' }, rotRows.map(r => r.row))),
     sizeGroup,
     ...(finishP ? [finishP.el] : []),
-    group('Calque', layerWrap),
-    group('Dupliquer', dupBtns),
+    group(t('common.layer'), layerWrap),
+    group(t('common.duplicate'), dupBtns),
     h('div', { class: 'insp-group' }, delBtn),
   );
 
@@ -262,32 +266,32 @@ function itemPanel(id: string): Panel {
     if (it.kind === 'kallax') {
       const off = isOfficial(it.cols, it.rows);
       typeLabel.replaceChildren(`Kallax ${it.cols}×${it.rows} · ${kallaxNominal(it.cols)}×${kallaxNominal(it.rows)} cm `,
-        h('span', { class: `pill ${off ? 'pill-ikea' : 'pill-custom'}` }, off ? 'IKEA' : 'Sur mesure'));
+        h('span', { class: `pill ${off ? 'pill-ikea' : 'pill-custom'}` }, off ? t('common.ikea') : t('common.custom')));
       colsSt!.set(it.cols); rowsSt!.set(it.rows);
       const can = legsAvailable(it.cols, it.rows) || !!it.legs;
       legsSw!.set(!!it.legs);
       legsSw!.input.disabled = !can || locked;
       legsSw!.el.classList.toggle('disabled', !can);
-      legsSw!.el.title = can ? '' : 'Piètement IKEA : 2×2, 2×4 debout, 4×2 / 4×3 couchés, 4×4';
+      legsSw!.el.title = can ? '' : t('insp.legsTitle');
       finishP!.set({
         value: it.finish ?? null, inherit: !it.finish, global: store.doc.finish ?? DEFAULT_FINISH,
         unavailable: f => notSoldIn([it], f), disabled: locked,
       });
-      priceHost.replaceChildren(priceCard([it], 'Prix'));
+      priceHost.replaceChildren(priceCard([it], t('insp.price')));
     } else if (it.shape === 'cylinder' || it.shape === 'square') {
       const c = cylinderDims(it);
       typeLabel.textContent = it.shape === 'square'
-        ? `Poutre carrée · □ ${fmtCm(c.diameter)} × ${fmtCm(c.length)} cm`
-        : `Poutre ronde · Ø ${fmtCm(c.diameter)} × ${fmtCm(c.length)} cm`;
+        ? t('insp.typeSquare', { d: fmtCm(c.diameter), l: fmtCm(c.length) })
+        : t('insp.typeRound', { d: fmtCm(c.diameter), l: fmtCm(c.length) });
       fw!.set(c.diameter); fh!.set(c.length);
     } else if (it.shape === 'window') {
-      typeLabel.textContent = 'Fenêtre · 2 vantaux';
+      typeLabel.textContent = t('insp.typeWindow');
       fw!.set(it.size.w); fd!.set(it.size.d); fh!.set(it.size.h);
     } else if (it.shape === 'wall') {
-      typeLabel.textContent = 'Mur · plan opaque';
+      typeLabel.textContent = t('insp.typeWall');
       fw!.set(it.size.w); fh!.set(it.size.h);
     } else {
-      typeLabel.textContent = 'Bloc libre';
+      typeLabel.textContent = t('insp.typeBlock');
       fw!.set(it.size.w); fd!.set(it.size.d); fh!.set(it.size.h);
     }
     dimsHost.replaceChildren(dimsBlock(s.w, s.d, s.h));
@@ -296,7 +300,7 @@ function itemPanel(id: string): Panel {
     const eul = itemEuler(it);
     for (const r of rotRows) {
       r.val.textContent = `${eul[r.ax]}°`;
-      r.val.setAttribute('aria-label', `Rotation ${r.ax.toUpperCase()} ${eul[r.ax]} degrés`);
+      r.val.setAttribute('aria-label', t('insp.rotAria', { axis: r.ax.toUpperCase(), deg: eul[r.ax] }));
     }
     // layer picker
     const opts = store.doc.layers.map(l => `${l.id}|${l.name}`).join(';');
@@ -326,14 +330,14 @@ function renameKallax(x: Item, c0: number, r0: number, c1: number, r1: number): 
 function dupRow(): HTMLElement {
   const b = (axis: 'x' | 'y' | 'z', ic: string, label: string, sub: string, kbd?: string) => {
     const el = h('button', { type: 'button', class: 'dup-btn' }, icon(ic, 18), h('span', { class: 'dup-label' }, label), h('span', { class: 'dup-sub' }, sub));
-    tip(el, `Dupliquer ${label} (${sub}), jointif`, kbd);
+    tip(el, t(axis === 'x' ? 'insp.dupTipX' : axis === 'y' ? 'insp.dupTipY' : 'insp.dupTipZ'), kbd);
     el.addEventListener('click', () => cmd.duplicate(axis));
     return el;
   };
   return h('div', { class: 'dup-row' },
-    b('x', 'arrowRight', 'à droite', '+X', `${MOD}D`),
-    b('y', 'arrowBack', 'derrière', '+Y'),
-    b('z', 'arrowUp', 'dessus', '+Z'));
+    b('x', 'arrowRight', t('insp.dupRight'), '+X', `${MOD}D`),
+    b('y', 'arrowBack', t('insp.dupBehind'), '+Y'),
+    b('z', 'arrowUp', t('insp.dupTop'), '+Z'));
 }
 
 // ── multi selection ──────────────────────────────────────────
@@ -343,13 +347,13 @@ function multiPanel(): Panel {
   const sub = h('div', { class: 'hero-sub' });
   const dimsHost = h('div');
   const alignRow = h('div', { class: 'dup-row' },
-    alignBtn('x', 'alignLeft', 'gauche', 'min X'),
-    alignBtn('y', 'alignFront', 'avant', 'min Y'),
-    alignBtn('z', 'alignBottom', 'bas', 'min Z'));
-  const delBtn = button({ icon: 'trash', label: 'Supprimer la sélection', kbd: '⌫', cls: 'btn-destructive wide', onClick: () => cmd.deleteSelection() });
+    alignBtn('x', 'alignLeft', t('insp.alignLeft'), 'min X'),
+    alignBtn('y', 'alignFront', t('insp.alignFront'), 'min Y'),
+    alignBtn('z', 'alignBottom', t('insp.alignBottom'), 'min Z'));
+  const delBtn = button({ icon: 'trash', label: t('insp.deleteSel'), kbd: '⌫', cls: 'btn-destructive wide', onClick: () => cmd.deleteSelection() });
   const selKallax = () => store.selectedItems().filter((i): i is KallaxItem => i.kind === 'kallax' && !store.isLocked(i));
   const finishP = finishPicker({
-    withGlobal: true, ariaLabel: 'Finition des Kallax sélectionnés',
+    withGlobal: true, ariaLabel: t('insp.selFinishAria'),
     onPick: f => {
       const ids = new Set(selKallax().filter(k => (k.finish ?? null) !== f).map(k => k.id));
       if (!ids.size) return;
@@ -361,24 +365,24 @@ function multiPanel(): Panel {
   const priceHost = h('div', { class: 'price-host' });
   el.append(
     h('div', { class: 'insp-hero' }, h('div', { class: 'hero-icon' }, icon('duplicate', 22)), h('div', null, title, sub)),
-    group('Encombrement du groupe', dimsHost),
+    group(t('insp.groupSize'), dimsHost),
     priceHost,
     finishP.el,
-    group('Aligner', alignRow),
-    group('Dupliquer le groupe', dupRow()),
+    group(t('insp.align'), alignRow),
+    group(t('insp.dupGroup'), dupRow()),
     h('div', { class: 'insp-group' }, delBtn),
   );
   const update = () => {
     const sel = store.selectedItems();
-    title.textContent = `${sel.length} objets sélectionnés`;
+    title.textContent = t('insp.selCount', { n: sel.length });
     const k = sel.filter(i => i.kind === 'kallax').length;
-    sub.textContent = `${k} Kallax · ${sel.length - k} bloc${sel.length - k > 1 ? 's' : ''}`;
+    sub.textContent = tn('insp.selSub', sel.length - k, { k });
     const u = unionBox(sel);
     if (u) dimsHost.replaceChildren(dimsBlock(u.max.x - u.min.x, u.max.y - u.min.y, u.max.z - u.min.z));
     // finish of the selected KALLAX (one undo step for all)
     const ks = sel.filter((i): i is KallaxItem => i.kind === 'kallax');
     finishP.el.hidden = !ks.length;
-    priceHost.replaceChildren(...(ks.length ? [priceCard(ks, ks.length > 1 ? `${ks.length} Kallax` : 'Kallax')] : []));
+    priceHost.replaceChildren(...(ks.length ? [priceCard(ks, ks.length > 1 ? t('insp.nKallax', { n: ks.length }) : 'Kallax')] : []));
     if (ks.length) {
       const fs = ks.map(k => k.finish ?? null);
       const same = fs.every(f => f === fs[0]);
@@ -396,14 +400,14 @@ function multiPanel(): Panel {
 
 function alignBtn(axis: 'x' | 'y' | 'z', ic: string, label: string, sub: string) {
   const el = h('button', { type: 'button', class: 'dup-btn' }, icon(ic, 18), h('span', { class: 'dup-label' }, label), h('span', { class: 'dup-sub' }, sub));
-  tip(el, `Aligner à ${label === 'gauche' ? 'gauche' : label === 'avant' ? 'l’avant' : 'la base'} (${sub})`);
+  tip(el, t(axis === 'x' ? 'insp.alignTipX' : axis === 'y' ? 'insp.alignTipY' : 'insp.alignTipZ'));
   el.addEventListener('click', () => cmd.align(axis));
   return el;
 }
 
 // ── host ─────────────────────────────────────────────────────
 export function buildInspector(host: HTMLElement) {
-  const head = h('div', { class: 'insp-head' }, h('span', { class: 'insp-head-title' }, 'Inspecteur'));
+  const head = h('div', { class: 'insp-head' }, h('span', { class: 'insp-head-title' }, t('inspector.title')));
   const scroll = h('div', { class: 'insp-scroll' });
   const footer = buildTotalFooter(() => {
     // Show the composition details and bring the priced list into view.

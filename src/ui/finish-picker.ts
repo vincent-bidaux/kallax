@@ -4,6 +4,7 @@
 import { FINISHES, FINISH_BY_ID, type FinishId } from '../core/finishes';
 import { h } from './dom';
 import { tip } from './controls';
+import { t } from '../core/i18n';
 
 export interface FinishPickerState {
   /** Selected finish, or null (inheriting the global finish, or mixed selection). */
@@ -29,7 +30,7 @@ export function finishPicker(o: {
   onPick: (f: FinishId | null) => void;
 }): FinishPicker {
   const current = h('span', { class: 'finish-current' });
-  const head = h('div', { class: 'insp-title-row finish-head' }, h('h4', { class: 'insp-title' }, o.title ?? 'Finition'), current);
+  const head = h('div', { class: 'insp-title-row finish-head' }, h('h4', { class: 'insp-title' }, o.title ?? t('common.finish')), current);
 
   let globalChip: HTMLButtonElement | null = null;
   const globalDot = h('span', { class: 'finish-dot', 'aria-hidden': 'true' });
@@ -70,11 +71,11 @@ export function finishPicker(o: {
     const inherit = !!s.inherit && !s.mixed;
     if (globalChip) {
       globalDot.style.setProperty('--sw', gl.color);
-      globalText.textContent = `Globale · ${gl.label}`;
+      globalText.textContent = t('fp.global', { label: gl.label });
       globalChip.classList.toggle('on', inherit);
       globalChip.setAttribute('aria-checked', String(inherit));
       globalChip.disabled = !!s.disabled;
-      tip(globalChip, `Suivre la finition globale (${gl.label})`);
+      tip(globalChip, t('fp.globalTip', { label: gl.label }));
     }
     const shown = s.mixed ? null : inherit ? null : s.value;
     for (const { f, b } of sw) {
@@ -92,10 +93,10 @@ export function finishPicker(o: {
     const sel = list.find(b => b.getAttribute('aria-checked') === 'true') ?? list[0];
     for (const b of list) b.tabIndex = b === sel ? 0 : -1;
     // label on the right
-    const label = s.mixed ? 'Mixte' : inherit ? gl.label : s.value ? FINISH_BY_ID[s.value].label : gl.label;
+    const label = s.mixed ? t('fp.mixed') : inherit ? gl.label : s.value ? FINISH_BY_ID[s.value].label : gl.label;
     const why = !s.mixed && (inherit ? s.unavailable?.(s.global) : s.value ? s.unavailable?.(s.value) : null);
     current.replaceChildren(label);
-    if (inherit && o.withGlobal) current.append(h('span', { class: 'finish-sub' }, ' · globale'));
+    if (inherit && o.withGlobal) current.append(h('span', { class: 'finish-sub' }, t('fp.globalSuffix')));
     current.classList.toggle('na', !!why);
     el.classList.toggle('disabled', !!s.disabled);
   };

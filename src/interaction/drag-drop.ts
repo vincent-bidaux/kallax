@@ -4,6 +4,7 @@ import { store } from '../core/store';
 import { ui } from './context';
 import { computePlacement, freeSpot, type PlaceResult } from './placement';
 import { h, toast } from '../ui/dom';
+import { t, DECIMAL } from '../core/i18n';
 import { worldSize } from '../core/kallax';
 
 /** True when (x, y) is over the 3D canvas itself (not over an overlay widget such as the ViewCube). */
@@ -133,7 +134,7 @@ export function beginLibraryDrag(e: PointerEvent, source: HTMLElement, make: () 
     if (ok && placed) {
       store.addItem(placed);
     } else if (lastOver && last && !last.valid) {
-      toast('Emplacement occupé — déposez ailleurs');
+      toast(t('cmd.spotTaken'));
     }
   };
 
@@ -151,5 +152,5 @@ export function beginLibraryDrag(e: PointerEvent, source: HTMLElement, make: () 
 
 function fmt(v: number) {
   const r = Math.round(v * 10) / 10;
-  return (Number.isInteger(r) ? String(r) : r.toFixed(1)).replace('.', ',');
+  return (Number.isInteger(r) ? String(r) : r.toFixed(1)).replace('.', DECIMAL);
 }

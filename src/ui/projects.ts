@@ -5,8 +5,10 @@ import { store } from '../core/store';
 import { uid } from '../core/store';
 import type { DesignDoc } from '../core/types';
 import { ui } from '../interaction/context';
+import { downloadJSON, slug, validDoc } from './file-io';
 import { h, toast, MOD } from './dom';
 import { icon } from './icons';
+import { t, tn, locale } from '../core/i18n';
 
 interface ProjectMeta {
   id: string;
@@ -64,8 +66,8 @@ export function isDirty(): boolean {
   return JSON.stringify(store.doc) !== savedJson;
 }
 export function saveStatus(): string {
-  if (!currentId) return store.doc.items.length ? 'Non enregistré' : 'Nouveau projet';
-  return isDirty() ? 'Modifié — non enregistré' : 'Enregistré';
+  if (!currentId) return store.doc.items.length ? t('prj.statusUnsaved') : t('prj.statusNew');
+  return isDirty() ? t('prj.statusModified') : t('prj.statusSaved');
 }
 
 // ── thumbnail ──────────────────────────────────────────────
@@ -97,10 +99,10 @@ function captureThumb(): Promise<string | undefined> {
 // ── actions ────────────────────────────────────────────────
 /** Save the current document. `asNew` = "Enregistrer sous…". */
 export async function saveProject(asNew = false): Promise<boolean> {
-  let name = store.doc.name || 'Sans titre';
+  let name = store.doc.name || t('doc.untitled');
   if (asNew || !currentId) {
-    const v = await promptName(asNew ? 'Enregistrer sous' : 'Enregistrer le projet',
-      asNew ? `${name} (copie)` : name);
+    const v = await promptName(asNew ? t('prj.saveAsTitle') : t('prj.saveTitle'),
+      asNew ? t('doc.copyName', { name }) : name);
     if (v === null) return false;
     name = v;
     if (name !== store.doc.name) store.update(d => { d.name = name; });
@@ -122,12 +124,12 @@ export async function saveProject(asNew = false): Promise<boolean> {
       localStorage.setItem(LS_PROJECT(id), JSON.stringify(doc));
       writeIndex([meta, ...list.filter(p => p.id !== id)]);
     } catch {
-      toast('Stockage du navigateur plein — exportez en JSON');
+      toast(t('prj.storageFullJSON'));
       return false;
     }
   }
   setCurrent(id, doc);
-  toast(`« ${doc.name} » enregistré`);
+  toast(t('prj.saved', { name: doc.name }));
   return true;
 }
 
@@ -135,12 +137,12 @@ export async function saveProject(asNew = false): Promise<boolean> {
 async function confirmDiscard(): Promise<boolean> {
   if (!isDirty()) return true;
   const r = await alertSheet({
-    title: `Enregistrer les modifications de « ${store.doc.name} » ?`,
-    message: 'Vos modifications seront perdues si vous ne les enregistrez pas.',
+    title: t('prj.confirmTitle', { name: store.doc.name }),
+    message: t('prj.confirmMsg'),
     buttons: [
-      { label: 'Ne pas enregistrer', value: 'discard', kind: 'plain' },
-      { label: 'Annuler', value: 'cancel', kind: 'plain' },
-      { label: 'Enregistrer', value: 'save', kind: 'primary' },
+      { label: t('prj.dontSave'), value: 'discard', kind: 'plain' },
+      { label: t('common.cancel'), value: 'cancel', kind: 'plain' },
+      { label: t('common.save'), value: 'save', kind: 'primary' },
     ],
   });
   if (r === 'save') return saveProject();
@@ -154,20 +156,20 @@ export async function newProject() {
   setCurrent(null, null);
   ui.viewport.setView('iso', true);
   sheet?.close();
-  toast('Nouveau projet');
+  toast(t('prj.newToast'));
 }
 
 export async function openProject(id: string) {
   if (id === currentId && !isDirty()) { sheet?.close(); return; }
   if (!(await confirmDiscard())) return;
   const doc = readProject(id);
-  if (!doc) { toast('Projet introuvable'); return; }
+  if (!doc) { toast(t('prj.notFound')); return; }
   store.loadDoc(doc);
   store.clearHistory();
   setCurrent(id, doc);
   ui.viewport.zoomToFit(true);
   sheet?.close();
-  toast(`« ${doc.name} » ouvert`);
+  toast(t('file.opened', { name: doc.name }));
 }
 
 function duplicateProject(id: string) {
@@ -175,12 +177,12 @@ function duplicateProject(id: string) {
   const meta = readIndex().find(p => p.id === id);
   if (!doc || !meta) return;
   const nid = uid('prj');
-  doc.name = `${doc.name} (copie)`;
+  doc.name = t('doc.copyName', { name: doc.name });
   const now = Date.now();
   try {
     localStorage.setItem(LS_PROJECT(nid), JSON.stringify(doc));
     writeIndex([{ ...meta, id: nid, name: doc.name, createdAt: now, updatedAt: now }, ...readIndex()]);
-  } catch { toast('Stockage du navigateur plein'); return; }
+  } catch { toast(t('prj.storageFull')); return; }
   emit();
 }
 
@@ -188,11 +190,11 @@ async function deleteProject(id: string) {
   const meta = readIndex().find(p => p.id === id);
   if (!meta) return;
   const r = await alertSheet({
-    title: `Supprimer « ${meta.name} » ?`,
-    message: 'Cette action est définitive.',
+    title: t('prj.deleteTitle', { name: meta.name }),
+    message: t('prj.deleteMsg'),
     buttons: [
-      { label: 'Annuler', value: 'cancel', kind: 'plain' },
-      { label: 'Supprimer', value: 'delete', kind: 'destructive' },
+      { label: t('common.cancel'), value: 'cancel', kind: 'plain' },
+      { label: t('common.delete'), value: 'delete', kind: 'destructive' },
     ],
   });
   if (r !== 'delete') return;
@@ -218,6 +220,52 @@ function renameProject(id: string, name: string) {
   emit();
 }
 
+// ── backups ───────────────────────────────────────────────
+interface Backup { kind: 'kallax-designer-backup'; version: 1; exportedAt: string; projects: { name: string; createdAt: number; updatedAt: number; doc: DesignDoc }[] }
+
+export function isBackup(d: unknown): d is Backup {
+  const b = d as Backup;
+  return !!b && b.kind === 'kallax-designer-backup' && Array.isArray(b.projects);
+}
+
+/** Download one saved project as JSON. */
+function downloadProject(id: string) {
+  const doc = readProject(id);
+  if (!doc) return;
+  downloadJSON(doc, `${slug(doc.name)}.kallax.json`);
+}
+
+/** Download every saved project in one backup file. */
+export function exportAllProjects() {
+  const list = readIndex();
+  if (!list.length) { toast(t('prj.emptyTitle')); return; }
+  const backup: Backup = {
+    kind: 'kallax-designer-backup', version: 1, exportedAt: new Date().toISOString(),
+    projects: list.map(p => ({ name: p.name, createdAt: p.createdAt, updatedAt: p.updatedAt, doc: readProject(p.id)! })).filter(p => p.doc),
+  };
+  downloadJSON(backup, `kallax-projects-${new Date().toISOString().slice(0, 10)}.json`);
+  toast(t('prj.exportAllDone', { n: backup.projects.length }));
+}
+
+/** Restore a backup: every project is added to the library (never overwrites). */
+export function importBackup(b: Backup) {
+  let n = 0;
+  const list = readIndex();
+  for (const p of b.projects) {
+    if (!validDoc(p.doc)) continue;
+    const id = uid('prj');
+    try {
+      localStorage.setItem(LS_PROJECT(id), JSON.stringify(p.doc));
+      list.unshift({ id, name: p.doc.name || p.name, createdAt: p.createdAt || Date.now(), updatedAt: p.updatedAt || Date.now(), items: p.doc.items.length });
+      n++;
+    } catch { toast(t('prj.storageFull')); break; }
+  }
+  writeIndex(list);
+  emit();
+  toast(t('prj.importedN', { n }));
+  openProjectsSheet();
+}
+
 // ── alert sheet (macOS-style) ──────────────────────────────
 interface AlertBtn { label: string; value: string; kind: 'plain' | 'primary' | 'destructive' }
 function alertSheet(o: { title: string; message?: string; buttons: AlertBtn[] }): Promise<string> {
@@ -241,9 +289,9 @@ function alertSheet(o: { title: string; message?: string; buttons: AlertBtn[] })
 
 function promptName(title: string, value: string): Promise<string | null> {
   return new Promise(resolve => {
-    const input = h('input', { type: 'text', class: 'alert-input', value, spellcheck: 'false', 'aria-label': 'Nom du projet' });
-    const cancel = h('button', { type: 'button', class: 'alert-btn plain' }, 'Annuler');
-    const ok = h('button', { type: 'submit', class: 'alert-btn primary' }, 'Enregistrer');
+    const input = h('input', { type: 'text', class: 'alert-input', value, spellcheck: 'false', 'aria-label': t('prj.nameAria') });
+    const cancel = h('button', { type: 'button', class: 'alert-btn plain' }, t('common.cancel'));
+    const ok = h('button', { type: 'submit', class: 'alert-btn primary' }, t('common.save'));
     const form = h('form', { method: 'dialog', class: 'alert-form' }, input, h('div', { class: 'alert-btns' }, cancel, ok));
     const dlg = h('dialog', { class: 'alert' },
       h('div', { class: 'alert-icon' }, icon('cube', 26)),
@@ -251,7 +299,7 @@ function promptName(title: string, value: string): Promise<string | null> {
       form,
     );
     const finish = (v: string | null) => { dlg.close(); dlg.remove(); resolve(v); };
-    form.addEventListener('submit', (e) => { e.preventDefault(); finish(input.value.trim() || 'Sans titre'); });
+    form.addEventListener('submit', (e) => { e.preventDefault(); finish(input.value.trim() || t('doc.untitled')); });
     cancel.addEventListener('click', () => finish(null));
     dlg.addEventListener('cancel', (e) => { e.preventDefault(); finish(null); });
     input.addEventListener('keydown', e => e.stopPropagation());
@@ -264,23 +312,25 @@ function promptName(title: string, value: string): Promise<string | null> {
 // ── "Mes projets" sheet ────────────────────────────────────
 let sheet: { open(): void; close(): void } | null = null;
 
-function relTime(t: number): string {
-  const s = Math.round((Date.now() - t) / 1000);
-  if (s < 60) return 'à l’instant';
-  const m = Math.round(s / 60); if (m < 60) return `il y a ${m} min`;
-  const hr = Math.round(m / 60); if (hr < 24) return `il y a ${hr} h`;
-  return new Date(t).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
+function relTime(time: number): string {
+  const s = Math.round((Date.now() - time) / 1000);
+  if (s < 60) return t('prj.justNow');
+  const m = Math.round(s / 60); if (m < 60) return t('prj.minAgo', { n: m });
+  const hr = Math.round(m / 60); if (hr < 24) return t('prj.hoursAgo', { n: hr });
+  return new Date(time).toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
 export function buildProjectsSheet(hooks: { importJSON(): void }) {
-  const close = h('button', { type: 'button', class: 'sheet-close', 'aria-label': 'Fermer' }, icon('xmark', 14));
-  const newBtn = h('button', { type: 'button', class: 'proj-new' }, icon('docNew', 15), 'Nouveau projet');
-  const importBtn = h('button', { type: 'button', class: 'proj-ghost' }, icon('folder', 15), 'Importer JSON…');
+  const close = h('button', { type: 'button', class: 'sheet-close', 'aria-label': t('common.close') }, icon('xmark', 14));
+  const newBtn = h('button', { type: 'button', class: 'proj-new' }, icon('docNew', 15), t('prj.new'));
+  const importBtn = h('button', { type: 'button', class: 'proj-ghost' }, icon('folder', 15), t('prj.import'));
+  const exportAllBtn = h('button', { type: 'button', class: 'proj-ghost' }, icon('download', 15), t('prj.exportAll'));
+  exportAllBtn.addEventListener('click', () => exportAllProjects());
   const grid = h('div', { class: 'proj-grid' });
   const dlg = h('dialog', { class: 'sheet proj-sheet', 'aria-labelledby': 'proj-title' },
-    h('div', { class: 'sheet-head' }, icon('folder', 18), h('h2', { id: 'proj-title' }, 'Mes projets'), importBtn, newBtn, close),
+    h('div', { class: 'sheet-head' }, icon('folder', 18), h('h2', { id: 'proj-title' }, t('prj.title')), exportAllBtn, importBtn, newBtn, close),
     grid,
-    h('p', { class: 'proj-foot' }, `Projets enregistrés dans ce navigateur. ${MOD}S pour enregistrer · exportez en JSON pour sauvegarder ailleurs.`),
+    h('p', { class: 'proj-foot' }, t('prj.foot', { mod: MOD })),
   );
   const doClose = () => {
     if (!dlg.open) return;
@@ -299,25 +349,27 @@ export function buildProjectsSheet(hooks: { importJSON(): void }) {
     const list = readIndex().sort((a, b) => b.updatedAt - a.updatedAt);
     if (!list.length) {
       grid.append(h('div', { class: 'proj-empty' }, icon('folder', 28),
-        h('strong', null, 'Aucun projet enregistré'),
-        h('span', null, `Utilisez Enregistrer (${MOD}S) pour garder votre composition.`)));
+        h('strong', null, t('prj.emptyTitle')),
+        h('span', null, t('prj.emptySub', { mod: MOD }))));
       return;
     }
     for (const p of list) {
-      const name = h('input', { class: 'proj-name', value: p.name, spellcheck: 'false', 'aria-label': 'Renommer', readonly: '' });
-      const dup = h('button', { type: 'button', class: 'proj-act', 'aria-label': 'Dupliquer', title: 'Dupliquer' }, icon('duplicate', 14));
-      const del = h('button', { type: 'button', class: 'proj-act danger', 'aria-label': 'Supprimer', title: 'Supprimer' }, icon('trash', 14));
-      const thumb = h('button', { type: 'button', class: 'proj-thumb', 'aria-label': `Ouvrir ${p.name}` },
+      const name = h('input', { class: 'proj-name', value: p.name, spellcheck: 'false', 'aria-label': t('common.rename'), readonly: '' });
+      const dup = h('button', { type: 'button', class: 'proj-act', 'aria-label': t('common.duplicate'), title: t('common.duplicate') }, icon('duplicate', 14));
+      const dl = h('button', { type: 'button', class: 'proj-act', 'aria-label': t('prj.download'), title: t('prj.download') }, icon('download', 14));
+      dl.addEventListener('click', () => downloadProject(p.id));
+      const del = h('button', { type: 'button', class: 'proj-act danger', 'aria-label': t('common.delete'), title: t('common.delete') }, icon('trash', 14));
+      const thumb = h('button', { type: 'button', class: 'proj-thumb', 'aria-label': t('prj.open', { name: p.name }) },
         p.thumb ? h('img', { src: p.thumb, alt: '' }) : icon('cube', 30));
       const card = h('div', { class: `proj-card${p.id === currentId ? ' current' : ''}` },
         thumb,
         h('div', { class: 'proj-info' },
           name,
           h('div', { class: 'proj-meta' },
-            `${p.items} objet${p.items > 1 ? 's' : ''} · ${relTime(p.updatedAt)}`,
-            p.id === currentId ? h('span', { class: 'proj-badge' }, 'Ouvert') : null),
+            `${tn('prj.items', p.items)} · ${relTime(p.updatedAt)}`,
+            p.id === currentId ? h('span', { class: 'proj-badge' }, t('prj.openBadge')) : null),
         ),
-        h('div', { class: 'proj-acts' }, dup, del),
+        h('div', { class: 'proj-acts' }, dl, dup, del),
       );
       thumb.addEventListener('click', () => openProject(p.id));
       name.addEventListener('dblclick', () => { name.readOnly = false; name.select(); });

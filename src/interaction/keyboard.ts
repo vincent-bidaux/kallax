@@ -1,6 +1,7 @@
 // Global keyboard shortcuts (ignored while typing in a field).
 import { store } from '../core/store';
 import { isTyping, toast } from '../ui/dom';
+import { t } from '../core/i18n';
 import * as cmd from './commands';
 import { ui } from './context';
 import { cancelActiveDrag } from './drag-drop';
@@ -78,11 +79,11 @@ export function installKeyboard(hooks: KeyboardHooks) {
       case 'p': handled(); cmd.toggleProjection(); return;
       case 'm':
         handled(); cmd.toggleSetting('measureItems');
-        toast(store.settings.measureItems ? 'Cotes par bloc affichées' : 'Cotes par bloc masquées', 1400);
+        toast(store.settings.measureItems ? t('cmd.dimsShown') : t('cmd.dimsHidden'), 1400);
         return;
       case 'g':
         handled(); cmd.toggleSetting('showGrid');
-        toast(store.settings.showGrid ? 'Grille affichée' : 'Grille masquée', 1400);
+        toast(store.settings.showGrid ? t('cmd.gridShown') : t('cmd.gridHidden'), 1400);
         return;
       case '?': handled(); hooks.openShortcuts(); return;
     }

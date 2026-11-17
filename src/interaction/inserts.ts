@@ -8,6 +8,7 @@ import { itemMatrix } from '../core/orient';
 import { kallaxCellRects } from './cells';
 import { ui } from './context';
 import { toast } from '../ui/dom';
+import { t } from '../core/i18n';
 
 interface CellHit { item: KallaxItem; c: number; r: number }
 
@@ -99,7 +100,7 @@ export function installInsertTool(vp: ViewportAPI) {
     const cur = h.item.inserts?.[`${h.c},${h.r}`];
     const removing = tool === 'erase' || cur === tool;
     vp.setGhost({ item: cellBox(h), valid: !removing });
-    ui.setToolHint(`${h.item.name} · case ${h.c + 1}×${h.r + 1}${cur ? ` (${INSERTS[cur].label.toLowerCase()})` : ''} — ${removing ? (cur ? 'cliquer pour retirer' : 'vide') : `cliquer pour poser : ${INSERTS[tool as keyof typeof INSERTS].label.toLowerCase()}`}`);
+    ui.setToolHint(`${t('ins.hintCell', { name: h.item.name, c: h.c + 1, r: h.r + 1 })}${cur ? ` (${INSERTS[cur].label.toLowerCase()})` : ''} — ${removing ? (cur ? t('ins.remove') : t('ins.empty')) : t('ins.place', { label: INSERTS[tool as keyof typeof INSERTS].label.toLowerCase() })}`);
     vp.requestRender();
   };
 
@@ -109,7 +110,7 @@ export function installInsertTool(vp: ViewportAPI) {
     if (!h) return; // empty space: let the camera orbit
     e.stopImmediatePropagation();
     e.preventDefault();
-    if (store.isLocked(h.item)) { toast('Calque verrouillé'); return; }
+    if (store.isLocked(h.item)) { toast(t('cmd.lockedShort')); return; }
     const tool = ui.insertTool;
     const key = `${h.c},${h.r}`;
     store.update(d => {

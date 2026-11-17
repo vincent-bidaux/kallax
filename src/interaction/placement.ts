@@ -7,6 +7,8 @@ import type { Item, Vec3 } from '../core/types';
 import { boxesOverlap, itemBox, unionBox, worldSize, WINDOW_SILL, type Box3 } from '../core/kallax';
 import { store } from '../core/store';
 import { ui } from './context';
+import { fmtCm } from '../core/kallax';
+import { t } from '../core/i18n';
 
 type Axis = 'x' | 'y' | 'z';
 const AXES: Axis[] = ['x', 'y', 'z'];
@@ -23,9 +25,9 @@ export interface SnapGuide {
 export interface PlaceResult {
   position: Vec3;
   valid: boolean;
-  surface: 'ground' | 'top' | 'side';
+  surface: 'ground' | 'top' | 'side' | 'wall' | 'air';
   guides: SnapGuide[];
-  /** Short French description for the status bar. */
+  /** Short description for the status bar (current UI language). */
   label: string | null;
 }
 
@@ -37,6 +39,8 @@ export interface PlaceOpts {
   ignoreIds: string[];
   /** Grabbed point relative to the item's min corner (cm). Default: centre of footprint, at the bottom. */
   grab?: Vec3;
+  /** Moving an existing item: its current base height. Over the floor it keeps that height (wall-hung items stay up). */
+  keepHeight?: number;
 }
 
 /** Snap threshold in cm ≈ 12 screen px at the given world point, clamped 2–20 cm. */
@@ -60,17 +64,19 @@ function itemName(id: string | undefined): string {
   return store.getItem(id)?.name ?? '';
 }
 
-const AXIS_FR: Record<Axis, string> = { x: 'X', y: 'Y', z: 'Z' };
+const AXIS_LABEL: Record<Axis, string> = { x: 'X', y: 'Y', z: 'Z' };
 
 export function describeGuides(guides: SnapGuide[], surface: PlaceResult['surface'], hitId: string | null): string | null {
   const parts: string[] = [];
-  if (surface === 'top' && hitId) parts.push(`Posé sur ${itemName(hitId)}`);
+  if (surface === 'top' && hitId) parts.push(t('snap.onTop', { name: itemName(hitId) }));
+  if (surface === 'wall' && hitId) parts.push(t('snap.onWall', { name: itemName(hitId) }));
+  if (surface === 'air') parts.push(t('snap.keepHeight'));
   for (const g of guides) {
-    if (g.kind === 'face' && g.targetId) parts.push(`Accolé à ${itemName(g.targetId)} (${AXIS_FR[g.axis]})`);
-    else if (g.kind === 'flush' && g.targetId) parts.push(`Jointif ${AXIS_FR[g.axis]} · ${itemName(g.targetId)}`);
-    else if (g.kind === 'align' && g.targetId) parts.push(`Aligné ${AXIS_FR[g.axis]} · ${itemName(g.targetId)}`);
+    if (g.kind === 'face' && g.targetId) parts.push(t('snap.face', { name: itemName(g.targetId), axis: AXIS_LABEL[g.axis] }));
+    else if (g.kind === 'flush' && g.targetId) parts.push(t('snap.flush', { name: itemName(g.targetId), axis: AXIS_LABEL[g.axis] }));
+    else if (g.kind === 'align' && g.targetId) parts.push(t('snap.align', { name: itemName(g.targetId), axis: AXIS_LABEL[g.axis] }));
   }
-  if (!parts.length && guides.some(g => g.kind === 'grid')) parts.push(`Grille ${String(store.settings.gridCell).replace('.', ',')} cm`);
+  if (!parts.length && guides.some(g => g.kind === 'grid')) parts.push(t('snap.grid', { cm: fmtCm(store.settings.gridCell) }));
   return parts.length ? parts.join('  ·  ') : null;
 }
 
@@ -124,10 +130,14 @@ export function computePlacement(o: PlaceOpts): PlaceResult | null {
   const guides: SnapGuide[] = [];
   let surface: PlaceResult['surface'] = 'ground';
 
+  const floating = (o.keepHeight ?? 0) > 0.01;
   if (!hit || !hitItem || hit.normal.z < -0.5) {
-    const p = vp.rayToPlane(cx, cy, { x: 0, y: 0, z: 1 }, grab.z) ?? hit?.point;
+    // over the floor: new items land on it; floating items keep their height
+    const baseZ = floating ? o.keepHeight! : 0;
+    const p = vp.rayToPlane(cx, cy, { x: 0, y: 0, z: 1 }, baseZ + grab.z) ?? hit?.point;
     if (!p) return null;
-    pos.x = p.x - grab.x; pos.y = p.y - grab.y; pos.z = 0;
+    pos.x = p.x - grab.x; pos.y = p.y - grab.y; pos.z = baseZ;
+    if (floating) surface = 'air';
   } else {
     const hb = itemBox(hitItem);
     if (hit.normal.z > 0.5) {
@@ -140,6 +150,14 @@ export function computePlacement(o: PlaceOpts): PlaceResult | null {
       surface = 'side';
       pos.z = hb.min.z;
       locked.z = false;
+      // against a wall: hang the item where the pointer is (height follows the cursor)
+      if (hitItem.kind === 'block' && hitItem.shape === 'wall') {
+        surface = 'wall';
+        const gz = o.grab ? grab.z : s.h / 2;
+        let z = hit.point.z - gz;
+        if (settings.snapGrid && settings.gridCell > 0) z = Math.round(z / settings.gridCell) * settings.gridCell;
+        pos.z = Math.max(0, Math.min(z, hb.max.z - s.h > 0 ? hb.max.z - s.h : z));
+      }
       pos.x = hit.point.x - grab.x; pos.y = hit.point.y - grab.y;
       if (Math.abs(hit.normal.x) > 0.5) {
         pos.x = hit.normal.x > 0 ? hb.max.x : hb.min.x - s.w;
@@ -154,7 +172,7 @@ export function computePlacement(o: PlaceOpts): PlaceResult | null {
   }
 
   // windows sit on a standard sill ("allège") unless stacked on something
-  if (item.kind === 'block' && item.shape === 'window' && surface !== 'top') pos.z += WINDOW_SILL;
+  if (item.kind === 'block' && item.shape === 'window' && surface === 'ground') pos.z += WINDOW_SILL;
 
   // ── reach guard: near the horizon (perspective / grazing views) the pointer ray
   // meets the floor hundreds of metres away. Refuse such positions instead of

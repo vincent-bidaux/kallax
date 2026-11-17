@@ -4,6 +4,7 @@
 // lying down is the same product as a 2×4 standing (key = small×large).
 // ─────────────────────────────────────────────────────────────
 import type { InsertType, Item, KallaxItem } from './types';
+import { t, lang, locale } from './i18n';
 
 export type FinishId =
   | 'blanc' | 'blanc-brillant' | 'brun-noir' | 'chene-blanchi' | 'chene' | 'noyer' | 'gris';
@@ -18,13 +19,13 @@ export interface Finish {
 }
 
 export const FINISHES: Finish[] = [
-  { id: 'blanc', label: 'Blanc', color: '#f1f0ec', line: '#5f6166' },
-  { id: 'blanc-brillant', label: 'Blanc brillant', color: '#fbfbfa', line: '#6b6e75' },
-  { id: 'brun-noir', label: 'Brun noir', color: '#3a2f2a', line: '#b9a99c' },
-  { id: 'chene-blanchi', label: 'Effet chêne blanchi', color: '#d8cab2', line: '#6e5f49' },
-  { id: 'chene', label: 'Effet chêne', color: '#c39a69', line: '#5e4224' },
-  { id: 'noyer', label: 'Noyer', color: '#7b5537', line: '#e2c7ac' },
-  { id: 'gris', label: 'Gris', color: '#8e9092', line: '#2f3133' },
+  { id: 'blanc', label: t('finish.blanc'), color: '#f1f0ec', line: '#5f6166' },
+  { id: 'blanc-brillant', label: t('finish.blancBrillant'), color: '#fbfbfa', line: '#6b6e75' },
+  { id: 'brun-noir', label: t('finish.brunNoir'), color: '#3a2f2a', line: '#b9a99c' },
+  { id: 'chene-blanchi', label: t('finish.cheneBlanchi'), color: '#d8cab2', line: '#6e5f49' },
+  { id: 'chene', label: t('finish.chene'), color: '#c39a69', line: '#5e4224' },
+  { id: 'noyer', label: t('finish.noyer'), color: '#7b5537', line: '#e2c7ac' },
+  { id: 'gris', label: t('finish.gris'), color: '#8e9092', line: '#2f3133' },
 ];
 export const FINISH_BY_ID = Object.fromEntries(FINISHES.map(f => [f.id, f])) as Record<FinishId, Finish>;
 export const DEFAULT_FINISH: FinishId = 'blanc';
@@ -53,12 +54,12 @@ export const FRAME_PRICES: Record<string, PriceMap> = {
 const LEGS_OK = new Set(['2x2', '2x4', '4x2', '4x3', '4x4']);
 export function legsCompatible(cols: number, rows: number): boolean { return LEGS_OK.has(`${cols}x${rows}`); }
 export function legsPrice(cols: number): number { return cols === 2 ? 25 : 35; }
-export function legsLabel(cols: number): string { return cols === 2 ? 'Piètement KALLAX 76 cm' : 'Piètement KALLAX 146 cm'; }
+export function legsLabel(cols: number): string { return t('product.legs', { w: cols === 2 ? 76 : 146 }); }
 
 export type BasketVariant = 'naturel' | 'blanc';
 export const BASKET_VARIANTS: { id: BasketVariant; label: string; price: number }[] = [
-  { id: 'naturel', label: 'Rotin naturel', price: 14.99 },
-  { id: 'blanc', label: 'Rotin peint en blanc', price: 16.99 },
+  { id: 'naturel', label: t('basket.naturel'), price: 14.99 },
+  { id: 'blanc', label: t('basket.blanc'), price: 16.99 },
 ];
 
 /** Cell fitting prices. The basket (BRANÄS rattan) uses its own variants. */
@@ -68,10 +69,10 @@ export const INSERT_PRICES: Record<Exclude<InsertType, 'basket'>, PriceMap> = {
   shelf: { 'blanc': 20 },
 };
 export const INSERT_NAMES: Record<InsertType, string> = {
-  door: 'KALLAX bloc porte',
-  drawers: 'KALLAX bloc 2 tiroirs',
-  shelf: 'KALLAX insert 1 étagère',
-  basket: 'BRANÄS panier',
+  door: t('product.door'),
+  drawers: t('product.drawers'),
+  shelf: t('product.shelf'),
+  basket: t('product.basket'),
 };
 
 export function modelKey(cols: number, rows: number): string {
@@ -98,8 +99,18 @@ export function effectiveFinish(it: KallaxItem, docFinish: FinishId | undefined)
   return it.finish ?? docFinish ?? DEFAULT_FINISH;
 }
 
+const EUR = new Intl.NumberFormat(locale, { style: 'currency', currency: 'EUR', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const EUR_WHOLE = new Intl.NumberFormat(locale, { style: 'currency', currency: 'EUR', minimumFractionDigits: 0, maximumFractionDigits: 0 });
+/** "19,99 €" in French, "€19.99" in English. */
 export function fmtEur(v: number): string {
-  return v.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
+  if (lang === 'fr') return v.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
+  return EUR.format(v);
+}
+/** Like fmtEur, without decimals for whole amounts ("20 €" / "€20"). */
+export function fmtEurShort(v: number): string {
+  if (Math.abs(v - Math.round(v)) > 1e-9) return fmtEur(v);
+  if (lang === 'fr') return `${Math.round(v).toLocaleString('fr-FR')} €`;
+  return EUR_WHOLE.format(v);
 }
 
 // ── bill of materials ────────────────────────────────────────
@@ -143,25 +154,25 @@ export function buildBom(items: Item[], docFinish: FinishId | undefined, basket:
     if (pm) {
       const p = priceFor(pm, f);
       add({ key: `f:${mk}:${f}`, label: `KALLAX ${it.cols}×${it.rows}`, detail: `${dims} · ${fl}`, unit: p.price, kind: 'frame',
-        note: p.exact ? undefined : `Finition non proposée en ${mk.replace('x', '×')} — prix ${FINISH_BY_ID[p.used].label.toLowerCase()}` });
+        note: p.exact ? undefined : t('bom.noteFinish', { model: mk.replace('x', '×'), finish: FINISH_BY_ID[p.used].label.toLowerCase() }) });
     } else {
-      add({ key: `f:${mk}:${f}`, label: `KALLAX ${it.cols}×${it.rows}`, detail: `${dims} · ${fl}`, unit: null, kind: 'frame', note: 'Format non vendu par IKEA (sur mesure)' });
+      add({ key: `f:${mk}:${f}`, label: `KALLAX ${it.cols}×${it.rows}`, detail: `${dims} · ${fl}`, unit: null, kind: 'frame', note: t('bom.noteCustom') });
     }
     if (it.legs) {
       const ok = legsCompatible(it.cols, it.rows);
       add({ key: `l:${it.cols === 2 ? 76 : 146}`, label: legsLabel(it.cols), detail: '39 × 18 cm', unit: ok ? legsPrice(it.cols) : null, kind: 'legs',
-        note: ok ? undefined : 'Piètement non compatible avec ce format' });
+        note: ok ? undefined : t('bom.noteLegs') });
     }
-    for (const [k, t] of Object.entries(it.inserts ?? {})) {
+    for (const [k, ty] of Object.entries(it.inserts ?? {})) {
       const [c, r] = k.split(',').map(Number);
       if (!(c < it.cols && r < it.rows)) continue;
-      if (t === 'basket') {
+      if (ty === 'basket') {
         const v = BASKET_VARIANTS.find(b => b.id === (basket ?? 'naturel'))!;
         add({ key: `i:basket:${v.id}`, label: INSERT_NAMES.basket, detail: `33×38×33 cm · ${v.label}`, unit: v.price, kind: 'insert' });
       } else {
-        const p = priceFor(INSERT_PRICES[t], f);
-        add({ key: `i:${t}:${p.used}`, label: INSERT_NAMES[t], detail: `33×33 cm · ${FINISH_BY_ID[p.used].label}`, unit: p.price, kind: 'insert',
-          note: p.exact ? undefined : `Pas en ${fl.toLowerCase()} — ${FINISH_BY_ID[p.used].label.toLowerCase()}` });
+        const p = priceFor(INSERT_PRICES[ty], f);
+        add({ key: `i:${ty}:${p.used}`, label: INSERT_NAMES[ty], detail: `33×33 cm · ${FINISH_BY_ID[p.used].label}`, unit: p.price, kind: 'insert',
+          note: p.exact ? undefined : t('bom.noteInsert', { finish: fl.toLowerCase(), used: FINISH_BY_ID[p.used].label.toLowerCase() }) });
       }
     }
   }

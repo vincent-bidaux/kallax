@@ -6,6 +6,7 @@ import { h, clear, toast } from './dom';
 import { icon } from './icons';
 import { shapeIcon } from './inspector';
 import { button, tip } from './controls';
+import { t, tn } from '../core/i18n';
 
 const expanded = new Set<string>();
 let initialised = false;
@@ -17,7 +18,7 @@ function itemDims(it: Item) {
 
 /** Inline rename: replaces `label` with an input until Enter / Escape / blur. */
 function inlineRename(label: HTMLElement, current: string, commit: (v: string) => void, onEnd: () => void) {
-  const input = h('input', { type: 'text', class: 'rename-input', value: current, 'aria-label': 'Renommer', spellcheck: 'false' });
+  const input = h('input', { type: 'text', class: 'rename-input', value: current, 'aria-label': t('common.rename'), spellcheck: 'false' });
   label.replaceWith(input);
   input.focus(); input.select();
   let done = false;
@@ -42,18 +43,18 @@ export function buildLayers(host: HTMLElement) {
   let dirty = false;
   let anchorId: string | null = null;
 
-  const addBtn = button({ icon: 'plus', label: 'Nouveau calque', iconOnly: true, cls: 'mini-btn', iconSize: 15, onClick: addLayer });
-  const list = h('div', { class: 'layers-list', role: 'tree', 'aria-label': 'Calques et objets', 'aria-multiselectable': 'true' });
+  const addBtn = button({ icon: 'plus', label: t('layers.new'), iconOnly: true, cls: 'mini-btn', iconSize: 15, onClick: addLayer });
+  const list = h('div', { class: 'layers-list', role: 'tree', 'aria-label': t('layers.treeAria'), 'aria-multiselectable': 'true' });
   host.append(
     h('section', { class: 'panel-section' },
-      h('div', { class: 'section-head' }, h('h3', { class: 'section-title' }, 'CALQUES'), addBtn),
+      h('div', { class: 'section-head' }, h('h3', { class: 'section-title' }, t('layers.title')), addBtn),
       list,
-      h('p', { class: 'hint' }, 'Double-clic pour renommer · le calque actif reçoit les nouveaux objets.')),
+      h('p', { class: 'hint' }, t('layers.hint'))),
   );
 
   function addLayer() {
     const n = store.doc.layers.length + 1;
-    const layer: Layer = { id: uid('layer'), name: `Calque ${n}`, visible: true, locked: false };
+    const layer: Layer = { id: uid('layer'), name: t('layer.default', { n }), visible: true, locked: false };
     store.update(d => { d.layers.push(layer); d.activeLayerId = layer.id; });
     expanded.add(layer.id);
   }
@@ -67,7 +68,7 @@ export function buildLayers(host: HTMLElement) {
       for (const it of d.items) if (it.layerId === id) it.layerId = target.id;
       if (d.activeLayerId === id) d.activeLayerId = target.id;
     });
-    if (n) toast(`${n} objet${n > 1 ? 's' : ''} déplacé${n > 1 ? 's' : ''} vers « ${target.name} »`);
+    if (n) toast(tn('layers.moved', n, { name: target.name }));
   }
 
   function patchLayer(id: string, patch: Partial<Layer>) {
@@ -101,27 +102,27 @@ export function buildLayers(host: HTMLElement) {
       const items = doc.items.filter(i => i.layerId === layer.id);
       const isActive = doc.activeLayerId === layer.id;
       const open = expanded.has(layer.id);
-      const disclosure = h('button', { type: 'button', class: `disclosure ${open ? 'open' : ''}`, 'aria-label': open ? 'Replier' : 'Déplier', tabindex: '-1' }, icon('chevronRight', 12));
+      const disclosure = h('button', { type: 'button', class: `disclosure ${open ? 'open' : ''}`, 'aria-label': open ? t('layers.collapse') : t('layers.expand'), tabindex: '-1' }, icon('chevronRight', 12));
       disclosure.addEventListener('click', (e) => { e.stopPropagation(); open ? expanded.delete(layer.id) : expanded.add(layer.id); render(); });
       const name = h('span', { class: 'layer-name' }, layer.name);
       const count = h('span', { class: 'layer-count' }, String(items.length));
-      const eye = h('button', { type: 'button', class: `row-toggle ${layer.visible ? '' : 'off'}`, 'aria-pressed': String(!layer.visible), 'aria-label': layer.visible ? 'Masquer le calque' : 'Afficher le calque' }, icon(layer.visible ? 'eye' : 'eyeSlash', 15));
-      tip(eye, layer.visible ? 'Masquer' : 'Afficher');
+      const eye = h('button', { type: 'button', class: `row-toggle ${layer.visible ? '' : 'off'}`, 'aria-pressed': String(!layer.visible), 'aria-label': layer.visible ? t('layers.hideAria') : t('layers.showAria') }, icon(layer.visible ? 'eye' : 'eyeSlash', 15));
+      tip(eye, layer.visible ? t('layers.hide') : t('layers.show'));
       eye.addEventListener('click', (e) => { e.stopPropagation(); patchLayer(layer.id, { visible: !layer.visible }); });
-      const lock = h('button', { type: 'button', class: `row-toggle ${layer.locked ? 'on' : ''}`, 'aria-pressed': String(layer.locked), 'aria-label': layer.locked ? 'Déverrouiller le calque' : 'Verrouiller le calque' }, icon(layer.locked ? 'lock' : 'lockOpen', 14));
-      tip(lock, layer.locked ? 'Déverrouiller' : 'Verrouiller');
+      const lock = h('button', { type: 'button', class: `row-toggle ${layer.locked ? 'on' : ''}`, 'aria-pressed': String(layer.locked), 'aria-label': layer.locked ? t('layers.unlockAria') : t('layers.lockAria') }, icon(layer.locked ? 'lock' : 'lockOpen', 14));
+      tip(lock, layer.locked ? t('layers.unlock') : t('layers.lock'));
       lock.addEventListener('click', (e) => { e.stopPropagation(); patchLayer(layer.id, { locked: !layer.locked }); });
-      const del = doc.layers.length > 1 ? h('button', { type: 'button', class: 'row-toggle del', 'aria-label': `Supprimer le calque ${layer.name}` }, icon('trash', 14)) : null;
-      if (del) { tip(del, 'Supprimer le calque (objets déplacés)'); del.addEventListener('click', (e) => { e.stopPropagation(); deleteLayer(layer.id); }); }
+      const del = doc.layers.length > 1 ? h('button', { type: 'button', class: 'row-toggle del', 'aria-label': t('layers.deleteAria', { name: layer.name }) }, icon('trash', 14)) : null;
+      if (del) { tip(del, t('layers.deleteTip')); del.addEventListener('click', (e) => { e.stopPropagation(); deleteLayer(layer.id); }); }
 
       const row = h('div', {
         class: `layer-row ${isActive ? 'active' : ''} ${layer.visible ? '' : 'hidden-layer'}`,
         role: 'treeitem', tabindex: '0', 'aria-expanded': String(open), 'aria-selected': String(isActive),
         'aria-level': '1', dataset: { key: `l:${layer.id}` },
       }, disclosure, icon('layers', 15, 'layer-icon'), name,
-        isActive ? h('span', { class: 'active-dot', role: 'img', 'aria-label': 'calque actif' }) : null, count,
+        isActive ? h('span', { class: 'active-dot', role: 'img', 'aria-label': t('layers.activeAria') }) : null, count,
         h('span', { class: 'row-actions' }, del, lock, eye));
-      tip(row, isActive ? 'Calque actif — les nouveaux objets y sont ajoutés' : 'Cliquer pour rendre actif');
+      tip(row, isActive ? t('layers.activeTip') : t('layers.makeActiveTip'));
       row.addEventListener('click', () => { if (!isActive) store.update(d => { d.activeLayerId = layer.id; }); });
       row.addEventListener('dblclick', (e) => {
         e.preventDefault();
@@ -139,7 +140,7 @@ export function buildLayers(host: HTMLElement) {
 
       if (!open) continue;
       if (!items.length) {
-        list.appendChild(h('div', { class: 'item-row empty', 'aria-hidden': 'true' }, 'Aucun objet'));
+        list.appendChild(h('div', { class: 'item-row empty', 'aria-hidden': 'true' }, t('layers.noObjects')));
         continue;
       }
       for (const it of items) {
@@ -152,7 +153,7 @@ export function buildLayers(host: HTMLElement) {
           h('span', { class: 'item-glyph' }, it.kind === 'kallax' ? icon('grid', 13) : icon(shapeIcon(it.shape), 13)),
           nm,
           h('span', { class: 'item-dims' }, itemDims(it)),
-          layer.locked ? h('span', { class: 'item-lock', 'aria-label': 'verrouillé' }, icon('lock', 11)) : null,
+          layer.locked ? h('span', { class: 'item-lock', 'aria-label': t('layers.lockedAria') }, icon('lock', 11)) : null,
         );
         r.addEventListener('click', (e) => selectItem(e, it));
         r.addEventListener('pointerenter', () => store.setHover(it.id));

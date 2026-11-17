@@ -4,11 +4,12 @@ import { fmtCm } from '../core/kallax';
 import { ui } from '../interaction/context';
 import { h, MOD } from './dom';
 import { icon } from './icons';
+import { t, tn } from '../core/i18n';
 
 export function buildStatusbar(host: HTMLElement) {
   const cx = h('span', { class: 'coord-v' }, '—');
   const cy = h('span', { class: 'coord-v' }, '—');
-  const coords = h('div', { class: 'sb-item sb-coords', 'aria-label': 'Coordonnées du curseur au sol' },
+  const coords = h('div', { class: 'sb-item sb-coords', 'aria-label': t('sb.coordsAria') },
     icon('target', 12), h('span', { class: 'axis-x' }, 'X'), cx, h('span', { class: 'axis-y' }, 'Y'), cy);
   const snap = h('div', { class: 'sb-item sb-snap' });
   const sel = h('div', { class: 'sb-item sb-sel' });
@@ -28,24 +29,24 @@ export function buildStatusbar(host: HTMLElement) {
       snap.append(h('span', { class: 'snap-live' }, ui.snap));
     } else {
       const parts: string[] = [];
-      if (s.snapGrid) parts.push(`grille ${fmtCm(s.gridCell)} cm`);
-      if (s.snapItems) parts.push('objets');
-      snap.append(h('span', null, parts.length ? `Aimant : ${parts.join(' + ')}` : 'Aimant désactivé'));
+      if (s.snapGrid) parts.push(t('sb.snapGrid', { cm: fmtCm(s.gridCell) }));
+      if (s.snapItems) parts.push(t('sb.snapItems'));
+      snap.append(h('span', null, parts.length ? t('sb.snap', { parts: parts.join(' + ') }) : t('sb.snapOff')));
     }
     snap.classList.toggle('off', !s.snapGrid && !s.snapItems);
   };
   const updSel = () => {
     const n = store.selection.length;
     const total = store.items.length;
-    sel.textContent = n ? `${n} sélectionné${n > 1 ? 's' : ''} sur ${total}` : `${total} objet${total > 1 ? 's' : ''}`;
+    sel.textContent = n ? tn('sb.selected', n, { total }) : tn('sb.objects', total);
   };
   const updHint = () => {
     hint.classList.toggle('bad', ui.gesture !== 'none' && !ui.gestureValid);
-    if (ui.gesture === 'place') hint.textContent = ui.gestureValid ? 'Relâchez pour déposer · Échap pour annuler' : 'Emplacement occupé · Échap pour annuler';
-    else if (ui.gesture === 'move') hint.textContent = ui.gestureValid ? 'Relâchez pour placer · Échap pour annuler' : 'Position invalide (chevauchement)';
-    else if (ui.insertTool) hint.textContent = ui.toolHint ?? 'Habillage : cliquez dans une case d’un Kallax · Échap pour terminer';
-    else if (store.selection.length) hint.textContent = `R/X/Y pivoter · ${MOD}D ou ⌥glisser dupliquer · ←↑→↓ déplacer (⌥ fin) · ⌫ supprimer`;
-    else hint.textContent = 'Glisser : orbiter · clic : sélectionner · F cadrer · ? raccourcis';
+    if (ui.gesture === 'place') hint.textContent = ui.gestureValid ? t('sb.hintDrop') : t('sb.hintDropBad');
+    else if (ui.gesture === 'move') hint.textContent = ui.gestureValid ? t('sb.hintMove') : t('sb.hintMoveBad');
+    else if (ui.insertTool) hint.textContent = ui.toolHint ?? t('sb.hintInsert');
+    else if (store.selection.length) hint.textContent = t('sb.hintSelection', { mod: MOD });
+    else hint.textContent = t('sb.hintIdle');
   };
   ui.on(e => {
     if (e === 'cursor') updCursor();
