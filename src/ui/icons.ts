@@ -1,0 +1,65 @@
+// SF-Symbols-like thin-stroke icons (24×24 grid, 1.5 stroke, round caps/joins).
+import { svg } from './dom';
+
+const P: Record<string, string> = {
+  undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
+  redo: '<path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/>',
+  cube: '<path d="M12 2.8 20 7.4v9.2L12 21.2 4 16.6V7.4z"/><path d="M4 7.4 12 12l8-4.6M12 12v9.2"/>',
+  ruler: '<rect x="2.5" y="8" width="19" height="8" rx="1.6" transform="rotate(-30 12 12)"/><path d="m7.4 13.6-1-1.7M10.3 11.9l-1.5-2.6M13.2 10.2l-1-1.7M16.1 8.5l-1.5-2.6"/>',
+  render: '<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17" /><path d="M12 3.5a8.5 8.5 0 0 0 0 17z" fill="currentColor" stroke="none"/>',
+  grid: '<rect x="3.5" y="3.5" width="17" height="17" rx="2.5"/><path d="M9.2 3.5v17M14.8 3.5v17M3.5 9.2h17M3.5 14.8h17"/>',
+  fit: '<path d="M4 9V5.5A1.5 1.5 0 0 1 5.5 4H9M15 4h3.5A1.5 1.5 0 0 1 20 5.5V9M20 15v3.5a1.5 1.5 0 0 1-1.5 1.5H15M9 20H5.5A1.5 1.5 0 0 1 4 18.5V15"/><rect x="8.5" y="8.5" width="7" height="7" rx="1.2"/>',
+  more: '<circle cx="5.5" cy="12" r="1.1" fill="currentColor"/><circle cx="12" cy="12" r="1.1" fill="currentColor"/><circle cx="18.5" cy="12" r="1.1" fill="currentColor"/>',
+  moreCircle: '<circle cx="12" cy="12" r="8.75"/><circle cx="8" cy="12" r=".9" fill="currentColor"/><circle cx="12" cy="12" r=".9" fill="currentColor"/><circle cx="16" cy="12" r=".9" fill="currentColor"/>',
+  sidebarLeft: '<rect x="3" y="4.5" width="18" height="15" rx="2.5"/><path d="M9 4.5v15M5.5 8h1.5M5.5 10.5h1.5M5.5 13h1.5"/>',
+  sidebarRight: '<rect x="3" y="4.5" width="18" height="15" rx="2.5"/><path d="M15 4.5v15M17 8h1.5M17 10.5h1.5M17 13h1.5"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  minus: '<path d="M5 12h14"/>',
+  eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>',
+  eyeSlash: '<path d="M4 4l16 16"/><path d="M9.9 6A9.6 9.6 0 0 1 12 5.5c6 0 9.5 6.5 9.5 6.5a16 16 0 0 1-2.6 3.4M14.1 18.1a9.4 9.4 0 0 1-2.1.4C6 18.5 2.5 12 2.5 12a16.4 16.4 0 0 1 3.4-4"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',
+  lock: '<rect x="5" y="10.5" width="14" height="10" rx="2.2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/>',
+  lockOpen: '<rect x="5" y="10.5" width="14" height="10" rx="2.2"/><path d="M8 10.5V7.5a4 4 0 0 1 7.7-1.5"/>',
+  trash: '<path d="M4.5 6.5h15M9.5 6.5V4.8c0-.7.6-1.3 1.3-1.3h2.4c.7 0 1.3.6 1.3 1.3v1.7"/><path d="m6.2 6.5.9 12.3c.1 1 .9 1.7 1.9 1.7h6c1 0 1.8-.7 1.9-1.7l.9-12.3M10 10.5v6M14 10.5v6"/>',
+  duplicate: '<rect x="8" y="8" width="12" height="12" rx="2.2"/><path d="M16 8V6.2A2.2 2.2 0 0 0 13.8 4H6.2A2.2 2.2 0 0 0 4 6.2v7.6A2.2 2.2 0 0 0 6.2 16H8M14 11v6M11 14h6"/>',
+  rotateCw: '<path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"/><path d="M19.5 4v4h-4"/>',
+  rotateCcw: '<path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4.5 4v4h4"/>',
+  chevronDown: '<path d="m6.5 9.5 5.5 5.5 5.5-5.5"/>',
+  chevronRight: '<path d="m9.5 6.5 5.5 5.5-5.5 5.5"/>',
+  layers: '<path d="m12 3.5 8.5 4.5-8.5 4.5L3.5 8z"/><path d="m3.5 12 8.5 4.5 8.5-4.5"/><path d="m3.5 16 8.5 4.5 8.5-4.5"/>',
+  books: '<rect x="3.5" y="4" width="4.5" height="16" rx="1"/><rect x="9.5" y="4" width="4.5" height="16" rx="1"/><path d="m15.4 5.2 4.3-1.1 3.4 15.1-4.3 1z" transform="translate(-1.4 .4)"/>',
+  magnet: '<path d="M6 3.5v8a6 6 0 0 0 12 0v-8"/><path d="M6 3.5h3.5v8a2.5 2.5 0 0 0 5 0v-8H18M6 7.5h3.5M14.5 7.5H18"/>',
+  cursor: '<path d="M5.5 3.5 18 11l-5.6 1.4-2.6 5.6z"/>',
+  keyboard: '<rect x="2.5" y="6" width="19" height="12" rx="2.2"/><path d="M6 9.5h.01M9 9.5h.01M12 9.5h.01M15 9.5h.01M18 9.5h.01M6 12h.01M9 12h.01M12 12h.01M15 12h.01M18 12h.01M8 15h8"/>',
+  docNew: '<path d="M13.5 3.5H7A2 2 0 0 0 5 5.5v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9z"/><path d="M13.5 3.5V9H19M12 12v5M9.5 14.5h5"/>',
+  folder: '<path d="M3.5 7.5A2 2 0 0 1 5.5 5.5h4l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/>',
+  download: '<path d="M12 4v11M7.5 10.5 12 15l4.5-4.5"/><path d="M4.5 15.5v2.5a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-2.5"/>',
+  photo: '<rect x="3.5" y="5" width="17" height="14" rx="2.2"/><circle cx="9" cy="10" r="1.6"/><path d="m4 17 5-4.5 3.5 3 3-2.5 4.5 4"/>',
+  box: '<path d="M12 3 20 7v10l-8 4-8-4V7z" stroke-dasharray="0"/><path d="m4 7 8 4 8-4M12 11v10"/><path d="m8 5 8 4" opacity=".55"/>',
+  question: '<circle cx="12" cy="12" r="8.75"/><path d="M9.6 9.5a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .8-1 1.5v.7"/><circle cx="12" cy="16.6" r=".6" fill="currentColor"/>',
+  alignLeft: '<path d="M4.5 3.5v17"/><rect x="7.5" y="6" width="11" height="4.5" rx="1.2"/><rect x="7.5" y="13.5" width="7" height="4.5" rx="1.2"/>',
+  alignBottom: '<path d="M3.5 19.5h17"/><rect x="6" y="5.5" width="4.5" height="11" rx="1.2"/><rect x="13.5" y="9.5" width="4.5" height="7" rx="1.2"/>',
+  alignFront: '<path d="M3.5 19.5 8 15h12.5"/><path d="M8 15V4.5" opacity=".5"/><rect x="6" y="9" width="6" height="6" rx="1.2" transform="skewX(-20)" /><path d="m13 15 3.5-3.5"/>',
+  arrowRight: '<path d="M4.5 12h15M14 6.5l5.5 5.5-5.5 5.5"/>',
+  arrowUp: '<path d="M12 19.5v-15M6.5 10 12 4.5l5.5 5.5"/>',
+  arrowBack: '<path d="M6 18 18 6M10 6h8v8"/>',
+  check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
+  sparkles: '<path d="M12 3.5 13.6 9l5.4 1.6-5.4 1.6L12 17.5l-1.6-5.3L5 10.6 10.4 9z"/><path d="M19 15.5v4M17 17.5h4"/>',
+  shadow: '<circle cx="10" cy="9" r="5"/><ellipse cx="13" cy="19" rx="7" ry="1.8"/>',
+  transparency: '<rect x="3.5" y="3.5" width="11" height="11" rx="2"/><rect x="9.5" y="9.5" width="11" height="11" rx="2" stroke-dasharray="2 2.2"/>',
+  warning: '<path d="M10.3 4.3a2 2 0 0 1 3.4 0l7.4 12.8a2 2 0 0 1-1.7 3H4.6a2 2 0 0 1-1.7-3z"/><path d="M12 9.5v4"/><circle cx="12" cy="16.6" r=".6" fill="currentColor"/>',
+  xmark: '<path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/>',
+  target: '<circle cx="12" cy="12" r="7.5"/><path d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4"/>',
+  perspective: '<path d="M8 6.5h8l4 11H4z"/><path d="M12 6.5v11M6 12h12"/>',
+  ortho: '<rect x="4.5" y="5.5" width="15" height="13" rx="1.5"/><path d="M12 5.5v13M4.5 12h15"/>',
+  cavalier: '<rect x="3.5" y="9" width="11" height="11" rx="1"/><path d="M3.5 9 9 3.5h11v11L14.5 20M14.5 9 20 3.5"/>',
+  iso: '<path d="M12 3 20 7.5v9L12 21l-8-4.5v-9z"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9"/>',
+  grip: '<circle cx="9" cy="6" r="1.1" fill="currentColor" stroke="none"/><circle cx="15" cy="6" r="1.1" fill="currentColor" stroke="none"/><circle cx="9" cy="12" r="1.1" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="1.1" fill="currentColor" stroke="none"/><circle cx="9" cy="18" r="1.1" fill="currentColor" stroke="none"/><circle cx="15" cy="18" r="1.1" fill="currentColor" stroke="none"/>',
+  orbit: '<ellipse cx="12" cy="12" rx="9" ry="4"/><path d="M15.5 6.4A9 4 0 0 1 21 12"/><circle cx="12" cy="12" r="2"/><path d="m19.2 7.8 1.8-1.4.3 2.2"/>',
+};
+
+export type IconName = keyof typeof P;
+
+export function icon(name: IconName | string, size = 16, cls = ''): SVGSVGElement {
+  const body = P[name] ?? P.cube;
+  return svg(`<svg class="icon ${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${body}</svg>`);
+}

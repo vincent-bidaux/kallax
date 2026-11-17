@@ -1,0 +1,154 @@
+// User commands shared by keyboard shortcuts, inspector and menus.
+// Each command = at most one store.update() (one undo step).
+import { store, uid } from '../core/store';
+import type { Item, Rotation, Settings, ViewPreset, Vec3 } from '../core/types';
+import { itemBox, unionBox, worldSize, boxesOverlap } from '../core/kallax';
+import { ui } from './context';
+import { toast } from '../ui/dom';
+
+const r3 = (v: number) => Math.round(v * 1000) / 1000;
+
+/** Selected items that are editable (layer not locked). */
+export function editableSelection(): Item[] {
+  return store.selectedItems().filter(i => !store.isLocked(i));
+}
+
+function warnLocked(): boolean {
+  if (store.selection.length && !editableSelection().length) {
+    toast('Calque verrouillé — déverrouillez-le pour modifier');
+    return true;
+  }
+  return false;
+}
+
+export function deleteSelection() {
+  if (warnLocked()) return;
+  const ids = editableSelection().map(i => i.id);
+  if (!ids.length) return;
+  store.removeItems(ids);
+  store.select([]);
+}
+
+export function selectAll() {
+  store.select(store.visibleItems().map(i => i.id));
+}
+
+/** Duplicate the selection flush against its group bbox along +X / +Y / +Z, skipping occupied slots. */
+export function duplicate(axis: 'x' | 'y' | 'z' = 'x') {
+  const sel = store.selectedItems();
+  if (!sel.length) return;
+  const u = unionBox(sel)!;
+  const step = { x: u.max.x - u.min.x, y: u.max.y - u.min.y, z: u.max.z - u.min.z }[axis];
+  const others = store.visibleItems().map(itemBox);
+  let k = 1;
+  for (; k < 30; k++) {
+    const off = step * k;
+    const clash = sel.some(it => {
+      const b = itemBox(it);
+      b.min[axis] += off; b.max[axis] += off;
+      return others.some(o => boxesOverlap(b, o));
+    });
+    if (!clash) break;
+  }
+  const off = step * k;
+  const copies: Item[] = sel.map(it => {
+    const c = structuredClone(it) as Item;
+    c.id = uid();
+    c.position = { ...c.position, [axis]: r3(c.position[axis] + off) };
+    if (store.isLocked(c)) c.layerId = store.doc.activeLayerId;
+    return c;
+  });
+  store.update(d => { d.items.push(...copies); });
+  store.select(copies.map(c => c.id));
+}
+
+/** Rotate the editable selection by ±90° about its group centre, then re-snap the min corner to the grid. */
+export function rotateSelection(delta: 90 | -90) {
+  if (warnLocked()) return;
+  const sel = editableSelection();
+  if (!sel.length) return;
+  const u = unionBox(sel)!;
+  const cx = (u.min.x + u.max.x) / 2, cy = (u.min.y + u.max.y) / 2;
+  const next = sel.map(it => {
+    const s = worldSize(it);
+    const ix = it.position.x + s.w / 2 - cx, iy = it.position.y + s.d / 2 - cy;
+    // CCW (+90): (x, y) → (−y, x)
+    const nx = delta === 90 ? -iy : iy, ny = delta === 90 ? ix : -ix;
+    const rot = (((it.rotation + delta) % 360) + 360) % 360 as Rotation;
+    const ns = worldSize({ ...it, rotation: rot } as Item);
+    return { id: it.id, rot, pos: { x: cx + nx - ns.w / 2, y: cy + ny - ns.d / 2, z: it.position.z } };
+  });
+  // re-snap the group's min corner
+  let dx = 0, dy = 0;
+  if (store.settings.snapGrid) {
+    const g = store.settings.gridCell;
+    const mx = Math.min(...next.map(n => n.pos.x)), my = Math.min(...next.map(n => n.pos.y));
+    dx = Math.round(mx / g) * g - mx; dy = Math.round(my / g) * g - my;
+  }
+  store.update(d => {
+    for (const n of next) {
+      const it = d.items.find(i => i.id === n.id);
+      if (!it) continue;
+      it.rotation = n.rot;
+      it.position = { x: r3(n.pos.x + dx), y: r3(n.pos.y + dy), z: n.pos.z };
+    }
+  });
+}
+
+export function nudge(dx: number, dy: number, dz: number) {
+  if (warnLocked()) return;
+  const sel = editableSelection();
+  if (!sel.length) return;
+  const minZ = Math.min(...sel.map(i => i.position.z));
+  if (minZ + dz < 0) dz = -minZ;
+  if (!dx && !dy && !dz) return;
+  const ids = new Set(sel.map(i => i.id));
+  store.update(d => {
+    for (const it of d.items) if (ids.has(it.id)) {
+      it.position = { x: r3(it.position.x + dx), y: r3(it.position.y + dy), z: r3(it.position.z + dz) };
+    }
+  });
+}
+
+export function moveItemTo(id: string, pos: Partial<Vec3>) {
+  store.update(d => {
+    const it = d.items.find(i => i.id === id);
+    if (it) it.position = { ...it.position, ...pos, z: Math.max(0, pos.z ?? it.position.z) };
+  });
+}
+
+export function align(axis: 'x' | 'y' | 'z') {
+  const sel = editableSelection();
+  if (sel.length < 2) return;
+  const u = unionBox(sel)!;
+  const ids = new Set(sel.map(i => i.id));
+  store.update(d => {
+    for (const it of d.items) if (ids.has(it.id)) it.position = { ...it.position, [axis]: u.min[axis] };
+  });
+}
+
+// ── view / settings ──
+export function setView(v: ViewPreset) {
+  const vp = ui.viewport;
+  if (v === 'free') { if (store.settings.view !== 'free') store.setSettings({ view: 'free' }); return; }
+  // The viewport keeps store.settings.view in sync itself.
+  vp.setView(v, true);
+}
+
+export function setProjection(p: Settings['projection']) {
+  if (store.settings.view === 'cavalier') return;
+  ui.viewport.setProjection(p);
+}
+
+export function toggleProjection() {
+  if (store.settings.view === 'cavalier') { toast('La cavalière est toujours orthographique'); return; }
+  const p = store.settings.projection === 'perspective' ? 'orthographic' : 'perspective';
+  setProjection(p);
+  toast(p === 'perspective' ? 'Projection : perspective' : 'Projection : orthographique', 1400);
+}
+
+export function toggleSetting(k: 'measureItems' | 'measureGlobal' | 'showGrid' | 'showAxes' | 'snapGrid' | 'snapItems' | 'shadows' | 'transparency') {
+  store.setSettings({ [k]: !store.settings[k] } as Partial<Settings>);
+}
+
+export function zoomToFit() { ui.viewport.zoomToFit(true); }

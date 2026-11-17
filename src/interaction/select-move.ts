@@ -1,0 +1,203 @@
+// Selection, hover and move gestures in the 3D viewport.
+// Listeners run in the CAPTURE phase on the viewport container so they
+// fire before OrbitControls (which then never sees a press on an item).
+import type { ViewportAPI } from '../core/contracts';
+import type { Item, Vec3 } from '../core/types';
+import { store } from '../core/store';
+import { ui } from './context';
+import { computePlacement, boxesFree, boxAt } from './placement';
+import { toast } from '../ui/dom';
+
+interface MoveGesture {
+  pid: number;
+  x0: number; y0: number;
+  primary: Item;          // snapshot at pointerdown
+  ids: string[];          // moved items (editable selection)
+  orig: Map<string, Vec3>;
+  grab: Vec3;
+  moving: boolean;
+  valid: boolean;
+  /** Collapse a multi-selection to the clicked item if no drag happens. */
+  collapseTo: string | null;
+}
+
+let cancelMove: (() => boolean) | null = null;
+/** Cancel an in-progress move (Escape). Returns true when something was cancelled. */
+export function cancelActiveMove(): boolean { return cancelMove ? cancelMove() : false; }
+
+export function installSelectMove(vp: ViewportAPI) {
+  const el = vp.container;
+  const canvas = () => vp.getRenderer().domElement;
+  let g: MoveGesture | null = null;
+  let emptyDown: { pid: number; x0: number; y0: number; additive: boolean; maxD: number } | null = null;
+  let hoverRaf = 0;
+  let hoverEv: PointerEvent | null = null;
+  let moveRaf = 0;
+  let moveEv: PointerEvent | null = null;
+
+  const setCursor = (c: string) => { canvas().style.cursor = c; };
+
+  // ── pointerdown (capture) ──
+  el.addEventListener('pointerdown', (e) => {
+    if (e.target !== canvas()) return;
+    if (e.button !== 0 || e.altKey) return;
+    const id = vp.pickItem(e.clientX, e.clientY);
+    const additive = e.shiftKey || e.metaKey || e.ctrlKey;
+    if (!id) {
+      emptyDown = { pid: e.pointerId, x0: e.clientX, y0: e.clientY, additive, maxD: 0 };
+      return; // let OrbitControls orbit
+    }
+    // Pressed an item: we own this gesture.
+    e.stopPropagation();
+    e.preventDefault();
+    vp.setControlsEnabled(false);
+    let collapseTo: string | null = null;
+    if (additive) {
+      store.toggleSelect(id);
+    } else if (!store.selection.includes(id)) {
+      store.select([id]);
+    } else if (store.selection.length > 1) {
+      collapseTo = id;
+    }
+    const item = store.getItem(id)!;
+    const selected = store.selection.includes(id);
+    const ids = selected ? store.selectedItems().filter(i => !store.isLocked(i)).map(i => i.id) : [];
+    const canMove = selected && !store.isLocked(item) && ids.length > 0;
+
+    const hit = vp.raycastSurface(e.clientX, e.clientY);
+    const grab: Vec3 = hit && hit.itemId === id
+      ? { x: hit.point.x - item.position.x, y: hit.point.y - item.position.y, z: Math.max(0, hit.point.z - item.position.z) }
+      : { x: 0, y: 0, z: 0 };
+
+    g = {
+      pid: e.pointerId, x0: e.clientX, y0: e.clientY,
+      primary: structuredClone(item), ids: canMove ? ids : [],
+      orig: new Map(store.selectedItems().map(i => [i.id, { ...i.position }])),
+      grab, moving: false, valid: true, collapseTo,
+    };
+    try { canvas().setPointerCapture(e.pointerId); } catch { /* ignore */ }
+    window.addEventListener('pointermove', onGestureMove, true);
+    window.addEventListener('pointerup', onGestureUp, true);
+    window.addEventListener('pointercancel', onGestureCancel, true);
+    cancelMove = () => { if (!g) return false; endGesture(false); return true; };
+  }, true);
+
+  const applyMove = (ev: PointerEvent) => {
+    if (!g) return;
+    const res = computePlacement({ item: g.primary, clientX: ev.clientX, clientY: ev.clientY, ignoreIds: g.ids, grab: g.grab });
+    if (!res) return;
+    const p0 = g.orig.get(g.primary.id)!;
+    let d = { x: res.position.x - p0.x, y: res.position.y - p0.y, z: res.position.z - p0.z };
+    // keep the whole group above the floor
+    const minZ = Math.min(...g.ids.map(id => g!.orig.get(id)!.z));
+    if (minZ + d.z < 0) d = { ...d, z: -minZ };
+    const ids = new Set(g.ids);
+    store.preview(doc => {
+      for (const it of doc.items) if (ids.has(it.id)) {
+        const o = g!.orig.get(it.id)!;
+        it.position = { x: o.x + d.x, y: o.y + d.y, z: o.z + d.z };
+      }
+    });
+    const moved = store.items.filter(i => ids.has(i.id));
+    g.valid = boxesFree(moved.map(i => boxAt(i, i.position)), g.ids);
+    if (!g.valid) {
+      const prim = store.getItem(g.primary.id);
+      vp.setGhost(prim ? { item: prim, valid: false } : null);
+    } else vp.setGhost(null);
+    ui.setSnap(res.label);
+    ui.setGesture('move', g.valid);
+    ui.setCursor(vp.rayToPlane(ev.clientX, ev.clientY, { x: 0, y: 0, z: 1 }, 0));
+    vp.requestRender();
+  };
+
+  function onGestureMove(ev: PointerEvent) {
+    if (!g || ev.pointerId !== g.pid) return;
+    ev.stopPropagation();
+    if (!g.moving) {
+      if (Math.hypot(ev.clientX - g.x0, ev.clientY - g.y0) <= 4 || !g.ids.length) return;
+      g.moving = true;
+      g.collapseTo = null;
+      store.setHover(null);
+      document.body.classList.add('moving');
+      setCursor('grabbing');
+      ui.setGesture('move');
+    }
+    moveEv = ev;
+    if (!moveRaf) moveRaf = requestAnimationFrame(() => { moveRaf = 0; if (moveEv) applyMove(moveEv); });
+  }
+
+  function endGesture(commit: boolean) {
+    if (!g) return;
+    const wasMoving = g.moving;
+    cancelAnimationFrame(moveRaf); moveRaf = 0;
+    if (wasMoving) {
+      if (commit && g.valid) store.commit();
+      else {
+        store.cancelPreview();
+        if (commit && !g.valid) toast('Position invalide — déplacement annulé');
+      }
+    } else if (commit && g.collapseTo) {
+      store.select([g.collapseTo]);
+    }
+    try { canvas().releasePointerCapture(g.pid); } catch { /* ignore */ }
+    g = null;
+    cancelMove = null;
+    window.removeEventListener('pointermove', onGestureMove, true);
+    window.removeEventListener('pointerup', onGestureUp, true);
+    window.removeEventListener('pointercancel', onGestureCancel, true);
+    document.body.classList.remove('moving');
+    vp.setGhost(null);
+    vp.setControlsEnabled(true);
+    setCursor('');
+    ui.setSnap(null);
+    ui.setGesture('none');
+    vp.requestRender();
+  }
+
+  function onGestureUp(ev: PointerEvent) {
+    if (!g || ev.pointerId !== g.pid) return;
+    ev.stopPropagation();
+    if (g.moving) applyMove(ev);
+    endGesture(true);
+  }
+  function onGestureCancel(ev: PointerEvent) {
+    if (!g || ev.pointerId !== g.pid) return;
+    endGesture(false);
+  }
+
+  // ── empty-space click → clear selection (not after an orbit drag) ──
+  window.addEventListener('pointermove', (e) => {
+    if (emptyDown && e.pointerId === emptyDown.pid) {
+      emptyDown.maxD = Math.max(emptyDown.maxD, Math.hypot(e.clientX - emptyDown.x0, e.clientY - emptyDown.y0));
+    }
+  }, true);
+  window.addEventListener('pointerup', (e) => {
+    if (!emptyDown || e.pointerId !== emptyDown.pid) return;
+    const d = emptyDown; emptyDown = null;
+    if (d.maxD < 4 && !d.additive && store.selection.length) store.select([]);
+  }, true);
+
+  // ── hover + cursor coordinates ──
+  el.addEventListener('pointermove', (e) => {
+    if (g || ui.gesture !== 'none') return;
+    if (e.target !== canvas()) { store.setHover(null); return; }
+    hoverEv = e;
+    if (hoverRaf) return;
+    hoverRaf = requestAnimationFrame(() => {
+      hoverRaf = 0;
+      const ev = hoverEv; if (!ev) return;
+      ui.setCursor(vp.rayToPlane(ev.clientX, ev.clientY, { x: 0, y: 0, z: 1 }, 0));
+      if (ev.buttons !== 0) return; // orbiting
+      const id = vp.pickItem(ev.clientX, ev.clientY);
+      store.setHover(id);
+      const it = id ? store.getItem(id) : null;
+      setCursor(it ? (store.isLocked(it) ? 'pointer' : 'grab') : '');
+    });
+  });
+  el.addEventListener('pointerleave', () => {
+    if (g) return;
+    hoverEv = null;
+    store.setHover(null);
+    ui.setCursor(null);
+  });
+}

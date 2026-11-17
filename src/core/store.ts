@@ -124,6 +124,13 @@ class Store {
     this.emit('doc');
   }
 
+  /** Forget undo/redo history (e.g. after seeding the demo). */
+  clearHistory() {
+    this.past = [];
+    this.future = [];
+    this.emit('doc');
+  }
+
   addItem(item: Item, select = true) {
     this.update(d => { d.items.push(item); });
     if (select) this.select([item.id]);

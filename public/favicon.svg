@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a63b8"/>
+      <stop offset="1" stop-color="#143a72"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#bg)"/>
+  <g fill="none" stroke="#fff" stroke-linejoin="round" stroke-linecap="round">
+    <!-- isometric cube -->
+    <path d="M32 10 51 21v22L32 54 13 43V21z" stroke-width="2.6"/>
+    <path d="M13 21 32 32l19-11M32 32v22" stroke-width="2.2"/>
+    <!-- cell grid on the two visible faces -->
+    <path d="M22.5 26.5v22M13 32l19 11" stroke-width="1.4" opacity=".85"/>
+    <path d="M41.5 26.5v22M51 32 32 43" stroke-width="1.4" opacity=".85"/>
+    <path d="M22.5 15.5 41.5 26.5M41.5 15.5 22.5 26.5" stroke-width="1.4" opacity=".6"/>
+  </g>
+</svg>
