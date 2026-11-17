@@ -52,7 +52,7 @@ function seedDemo(): boolean {
     // 1×4 standing next to it
     { id: uid(), kind: 'kallax', name: 'Kallax 1×4', cols: 1, rows: 4, position: { x: w4, y: 0, z: 0 }, rotation: 0, layerId: base.id },
     // radiator against the wall behind, to the left
-    { id: uid(), kind: 'block', name: t('preset.radiator'), size: { w: 80, d: 10, h: 60 }, position: { x: -95, y: KALLAX.depth - 10, z: 15 }, rotation: 0, layerId: existing.id },
+    { id: uid(), kind: 'block', shape: 'radiator', name: t('obj.radiator'), size: { w: 80, d: 10, h: 60 }, position: { x: -95, y: KALLAX.depth - 10, z: 15 }, rotation: 0, layerId: existing.id },
   ];
   store.update(d => {
     d.name = t('seed.docName');

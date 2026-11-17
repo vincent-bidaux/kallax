@@ -1,14 +1,16 @@
 // Library: KALLAX catalogue tiles (to-scale front elevations) + free block builder.
-import { CATALOG, IKEA_LINKS, INSERTS, KALLAX, WINDOW_SILL, fmtCm, kallaxOuter, cylinderSize, type CatalogEntry } from '../core/kallax';
+import { CATALOG, IKEA_LINKS, INSERTS, KALLAX, fmtCm, kallaxOuter, cylinderSize, type CatalogEntry } from '../core/kallax';
 import type { InsertType } from '../core/types';
 import type { InsertTool } from '../interaction/context';
 import { store, uid } from '../core/store';
-import type { BlockItem, Item, KallaxItem } from '../core/types';
+import type { BlockItem, BlockShape, Item, KallaxItem } from '../core/types';
 import { h, svg } from './dom';
-import { numberField, segmented, textField, tip } from './controls';
+import { numberField, segmented, tip } from './controls';
 import { icon } from './icons';
 import { INSERT_NAMES, fmtEur, fmtEurShort, frameMinPrice, insertMinPrice } from '../core/finishes';
-import { t } from '../core/i18n';
+import { t, locale, type TKey } from '../core/i18n';
+import { OBJECT_DEFS, OBJECT_GROUPS, OBJECT_BY_SHAPE, variantOf, type ObjectGroup } from '../core/objects';
+import { autoName, baseZOf, objLabel } from './object-labels';
 import { beginLibraryDrag } from '../interaction/drag-drop';
 import { freeSpot } from '../interaction/placement';
 import { ui } from '../interaction/context';
@@ -62,7 +64,7 @@ function makeKallax(e: CatalogEntry): KallaxItem {
 
 function insertAtFreeSpot(it: Item) {
   it.position = freeSpot(it);
-  if (it.kind === 'block' && it.shape === 'window') it.position = { ...it.position, z: it.position.z + WINDOW_SILL };
+  if (it.kind === 'block') it.position = { ...it.position, z: it.position.z + baseZOf(it.shape) };
   store.addItem(it);
   ui.viewport.zoomToFit(true);
 }
@@ -144,159 +146,8 @@ export function buildLibrary(host: HTMLElement) {
     toolHint,
   );
 
-  // ── OBJETS (bloc, poutres, mur, fenêtre) ──
-  type ObjType = 'box' | 'round' | 'square' | 'wall' | 'window';
-  const TYPES: { id: ObjType; label: string; icon: string; tip: string }[] = [
-    { id: 'box', label: t('obj.box'), icon: 'box', tip: t('obj.boxTip') },
-    { id: 'round', label: t('obj.round'), icon: 'cylinder', tip: t('obj.roundTip') },
-    { id: 'square', label: t('obj.square'), icon: 'beamSquare', tip: t('obj.squareTip') },
-    { id: 'wall', label: t('obj.wall'), icon: 'wall', tip: t('obj.wallTip') },
-    { id: 'window', label: t('obj.window'), icon: 'window', tip: t('obj.windowTip') },
-  ];
-  const draft = {
-    type: 'box' as ObjType,
-    box: { w: 80, d: 10, h: 60, name: t('preset.radiator') },
-    round: { diameter: 12, length: 200, axis: 'x' as 'x' | 'z', name: t('obj.beam') },
-    square: { side: 10, length: 200, axis: 'x' as 'x' | 'z', name: t('obj.square') },
-    wall: { w: 300, h: 250, name: t('obj.wall') },
-    window: { w: 120, h: 135, d: 7, name: t('obj.window') },
-  };
-
-  const typeBtns = TYPES.map(ty => {
-    const el = h('button', { type: 'button', class: 'obj-type', role: 'radio', 'aria-label': ty.label },
-      icon(ty.icon, 20), h('span', null, ty.label));
-    tip(el, ty.tip);
-    el.addEventListener('click', () => { draft.type = ty.id; render(); });
-    return { el, t: ty };
-  });
-  const typeGrid = h('div', { class: 'obj-types', role: 'radiogroup', 'aria-label': t('obj.typeAria') }, typeBtns.map(b => b.el));
-  const params = h('div', { class: 'obj-params' });
-  const preview = h('div', { class: 'tile-art block-art' });
-  const tileLabel = h('div', { class: 'tile-label' });
-  const tileDims = h('div', { class: 'tile-sub' });
-  const objTile = h('div', {
-    class: 'lib-tile block-tile', role: 'button', tabindex: '0',
-    'aria-label': t('obj.tileAria'),
-  }, preview, h('div', { class: 'block-tile-text' }, tileLabel, tileDims),
-    h('span', { class: 'block-grip', 'aria-hidden': 'true' }, icon('grip', 16)));
-  tip(objTile, t('obj.tileTip'));
-
-  const makeObject = (): BlockItem => {
-    const base = { id: uid(), kind: 'block' as const, position: { x: 0, y: 0, z: 0 }, rotation: 0 as const, layerId: store.doc.activeLayerId };
-    switch (draft.type) {
-      case 'round': { const o = draft.round; return { ...base, shape: 'cylinder', axis: o.axis, name: o.name || t('obj.beam'), size: cylinderSize(o.diameter, o.length, o.axis) }; }
-      case 'square': { const o = draft.square; return { ...base, shape: 'square', axis: o.axis, name: o.name || t('obj.square'), size: cylinderSize(o.side, o.length, o.axis) }; }
-      case 'wall': { const o = draft.wall; return { ...base, shape: 'wall', name: o.name || t('obj.wall'), size: { w: o.w, d: 0, h: o.h } }; }
-      case 'window': { const o = draft.window; return { ...base, shape: 'window', name: o.name || t('obj.window'), size: { w: o.w, d: o.d, h: o.h } }; }
-      default: { const o = draft.box; return { ...base, name: o.name || t('obj.box'), size: { w: o.w, d: o.d, h: o.h } }; }
-    }
-  };
-  objTile.addEventListener('pointerdown', (ev) => beginLibraryDrag(ev, objTile, makeObject, makeObject().name));
-  objTile.addEventListener('keydown', (ev) => {
-    if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); insertAtFreeSpot(makeObject()); }
-  });
-
-  const num = (label: string, aria: string, value: number, onCommit: (v: number) => void, o: { step?: number; min?: number; max?: number; axis?: 'x' | 'y' | 'z' } = {}) =>
-    numberField({ label, ariaLabel: aria, value, step: o.step ?? 1, min: o.min ?? 0.5, max: o.max ?? 5000, suffix: 'cm', axis: o.axis, onCommit: v => { onCommit(v); updateTile(); } }).el;
-  const nameF = (obj: { name: string }, ph: string) =>
-    textField({ label: t('common.name'), value: obj.name, placeholder: ph, onCommit: v => { obj.name = v; updateTile(); } }).el;
-  const axisSeg = (obj: { axis: 'x' | 'z' }) => segmented<'x' | 'z'>({
-    ariaLabel: t('obj.orientation'), size: 'sm', value: obj.axis,
-    options: [{ value: 'x', label: t('obj.horizontal') }, { value: 'z', label: t('obj.vertical') }],
-    onChange: v => { obj.axis = v; updateTile(); },
-  }).el;
-
-  const BOX_PRESETS = [
-    { name: t('preset.radiator'), w: 80, d: 10, h: 60 },
-    { name: t('preset.skirting'), w: 200, d: 1.5, h: 8 },
-    { name: t('preset.socket'), w: 8, d: 4, h: 8 },
-    { name: t('preset.sill'), w: 120, d: 20, h: 90 },
-    { name: t('preset.door'), w: 83, d: 4, h: 204 },
-    { name: t('preset.bed'), w: 140, d: 190, h: 45 },
-  ];
-  const WINDOW_PRESETS = [
-    { name: '60 × 75', w: 60, h: 75 }, { name: '80 × 115', w: 80, h: 115 },
-    { name: '100 × 125', w: 100, h: 125 }, { name: '120 × 135', w: 120, h: 135 },
-    { name: FRENCH_WINDOW, w: 120, h: 215 },
-  ];
-
-  const renderParams = () => {
-    const ty = draft.type;
-    const nodes: Node[] = [];
-    if (ty === 'box') {
-      const o = draft.box;
-      nodes.push(h('div', { class: 'chips', role: 'group', 'aria-label': t('obj.presetsAria') }, BOX_PRESETS.map(p => {
-        const el = h('button', { type: 'button', class: `chip${p.name === o.name && p.w === o.w && p.d === o.d && p.h === o.h ? ' on' : ''}` }, p.name);
-        tip(el, `${p.name} · ${fmtCm(p.w)} × ${fmtCm(p.d)} × ${fmtCm(p.h)} cm`);
-        el.addEventListener('click', () => { Object.assign(o, p); render(); });
-        return el;
-      })));
-      nodes.push(h('div', { class: 'fields-3' },
-        num(t('dim.w'), t('aria.width'), o.w, v => o.w = v, { axis: 'x' }),
-        num(t('dim.d'), t('aria.depth'), o.d, v => o.d = v, { axis: 'y' }),
-        num(t('dim.h'), t('aria.height'), o.h, v => o.h = v, { axis: 'z' })));
-      nodes.push(nameF(o, t('obj.box')));
-    } else if (ty === 'round') {
-      const o = draft.round;
-      nodes.push(h('div', { class: 'fields-2' },
-        num('Ø', t('aria.diameter'), o.diameter, v => o.diameter = v, { step: 0.5 }),
-        num(t('dim.len'), t('aria.length'), o.length, v => o.length = v)));
-      nodes.push(axisSeg(o), nameF(o, t('obj.beam')));
-    } else if (ty === 'square') {
-      const o = draft.square;
-      nodes.push(h('div', { class: 'fields-2' },
-        num('□', t('aria.sectionSide'), o.side, v => o.side = v, { step: 0.5 }),
-        num(t('dim.len'), t('aria.length'), o.length, v => o.length = v)));
-      nodes.push(axisSeg(o), nameF(o, t('obj.square')));
-    } else if (ty === 'wall') {
-      const o = draft.wall;
-      nodes.push(h('div', { class: 'fields-2' },
-        num(t('dim.w'), t('aria.wallWidth'), o.w, v => o.w = v, { min: 1, axis: 'x' }),
-        num(t('dim.h'), t('aria.wallHeight'), o.h, v => o.h = v, { min: 1, axis: 'z' })));
-      nodes.push(nameF(o, t('obj.wall')));
-    } else {
-      const o = draft.window;
-      nodes.push(h('div', { class: 'chips', role: 'group', 'aria-label': t('obj.windowSizesAria') }, WINDOW_PRESETS.map(p => {
-        const el = h('button', { type: 'button', class: `chip${p.w === o.w && p.h === o.h ? ' on' : ''}` }, p.name);
-        tip(el, `${fmtCm(p.w)} × ${fmtCm(p.h)} cm`);
-        el.addEventListener('click', () => { o.w = p.w; o.h = p.h; if (p.name === FRENCH_WINDOW) o.name = FRENCH_WINDOW; else if (o.name === FRENCH_WINDOW) o.name = t('obj.window'); render(); });
-        return el;
-      })));
-      nodes.push(h('div', { class: 'fields-3' },
-        num(t('dim.w'), t('aria.width'), o.w, v => o.w = v, { min: 20, axis: 'x' }),
-        num(t('dim.d'), t('aria.frameDepth'), o.d, v => o.d = v, { min: 2, axis: 'y' }),
-        num(t('dim.h'), t('aria.height'), o.h, v => o.h = v, { min: 20, axis: 'z' })));
-      nodes.push(nameF(o, t('obj.window')));
-    }
-    params.replaceChildren(...nodes);
-  };
-
-  const updateTile = () => {
-    const ty = draft.type;
-    const meta = TYPES.find(x => x.id === ty)!;
-    tileLabel.textContent = meta.label;
-    let dims = '';
-    if (ty === 'box') { const o = draft.box; dims = `${fmtCm(o.w)} × ${fmtCm(o.d)} × ${fmtCm(o.h)} cm`; preview.replaceChildren(boxIsoSVG(o.w, o.d, o.h)); }
-    else if (ty === 'round') { const o = draft.round; dims = `Ø ${fmtCm(o.diameter)} × ${fmtCm(o.length)} cm · ${o.axis === 'x' ? t('obj.horizShort') : t('obj.vertShort')}`; preview.replaceChildren(icon('cylinder', 40)); }
-    else if (ty === 'square') { const o = draft.square; dims = `□ ${fmtCm(o.side)} × ${fmtCm(o.length)} cm · ${o.axis === 'x' ? t('obj.horizShort') : t('obj.vertShort')}`; const s = cylinderSize(o.side, o.length, o.axis); preview.replaceChildren(boxIsoSVG(s.w, s.d, s.h)); }
-    else if (ty === 'wall') { const o = draft.wall; dims = `${fmtCm(o.w)} × ${fmtCm(o.h)} cm`; preview.replaceChildren(icon('wall', 40)); }
-    else { const o = draft.window; dims = `${fmtCm(o.w)} × ${fmtCm(o.h)} cm · ${t('obj.sill')}`; preview.replaceChildren(icon('window', 40)); }
-    tileDims.textContent = dims;
-    preview.classList.toggle('shape-art', ty !== 'box' && ty !== 'square');
-  };
-
-  const render = () => {
-    for (const b of typeBtns) { b.el.classList.toggle('on', b.t.id === draft.type); b.el.setAttribute('aria-checked', String(b.t.id === draft.type)); }
-    renderParams();
-    updateTile();
-  };
-
-  const blockSec = h('section', { class: 'panel-section' },
-    h('div', { class: 'section-head' }, h('h3', { class: 'section-title' }, t('lib.objectsTitle'))),
-    typeGrid,
-    params,
-    objTile,
-  );
+  // ── OBJETS: three groups (Blocks / House / Objects), one selected type at a time ──
+  const objSecs = buildObjectGroups();
 
   const refSec = h('section', { class: 'panel-section lib-refs' },
     h('div', { class: 'section-head' }, h('h3', { class: 'section-title' }, t('lib.refsTitle'))),
@@ -306,6 +157,199 @@ export function buildLibrary(host: HTMLElement) {
     h('p', { class: 'ref-note' },
       t('lib.refNote', { legs: fmtCm(KALLAX.legs) })),
   );
-  host.append(kallaxSec, insertSec, blockSec, refSec);
+  host.append(kallaxSec, insertSec, ...objSecs, refSec);
+}
+
+// ── Objects module ───────────────────────────────────────────
+/** Library draft of one object type (what the next drop creates). */
+interface Draft {
+  w: number; d: number; h: number;
+  /** Beams: Ø / side and length. */
+  dia: number; len: number; axis: 'x' | 'z';
+  variant?: string;
+  /** Door: handle on the left. */
+  mirror: boolean;
+  /** Name override (window presets: "Porte-fenêtre"). */
+  name?: string;
+}
+
+const TYPE_TIPS: Partial<Record<BlockShape, TKey>> = {
+  box: 'obj.brickTip', cylinder: 'obj.roundTip', square: 'obj.squareTip',
+  wall: 'obj.wallTip', window: 'obj.windowTip', door: 'obj.doorTip', skirting: 'obj.skirtingTip', radiator: 'obj.radiatorTip',
+  bed: 'obj.bedTip', lamp: 'obj.lampTip', plant: 'obj.plantTip',
+};
+
+const WINDOW_PRESETS = [
+  { name: '60 × 75', w: 60, h: 75 }, { name: '80 × 115', w: 80, h: 115 },
+  { name: '100 × 125', w: 100, h: 125 }, { name: '120 × 135', w: 120, h: 135 },
+  { name: FRENCH_WINDOW, w: 120, h: 215 },
+];
+
+const isBeam = (s: BlockShape) => s === 'cylinder' || s === 'square';
+
+function buildObjectGroups(): HTMLElement[] {
+  const drafts = Object.fromEntries(OBJECT_DEFS.map(def => [def.shape, {
+    w: def.size.w, d: def.size.d, h: def.size.h,
+    dia: def.size.h, len: def.size.w, axis: 'x',
+    variant: def.defaultVariant, mirror: false,
+  } satisfies Draft])) as Record<BlockShape, Draft>;
+  let active: BlockShape = 'box';
+
+  // shared editor (parameters + draggable tile), moved under the active group's type row
+  const params = h('div', { class: 'obj-params' });
+  const preview = h('div', { class: 'tile-art block-art' });
+  const tileLabel = h('div', { class: 'tile-label' });
+  const tileDims = h('div', { class: 'tile-sub' });
+  const tileExtra = h('div', { class: 'tile-sub tile-extra' });
+  const objTile = h('div', { class: 'lib-tile block-tile', role: 'button', tabindex: '0' },
+    preview, h('div', { class: 'block-tile-text' }, tileLabel, tileDims, tileExtra),
+    h('span', { class: 'block-grip', 'aria-hidden': 'true' }, icon('grip', 16)));
+  tip(objTile, t('obj.tileTip'));
+  const editor = h('div', { class: 'obj-editor' }, params, objTile);
+
+  const nameOf = (shape: BlockShape) => drafts[shape].name ?? autoName(shape, drafts[shape].variant);
+
+  const makeObject = (): BlockItem => {
+    const shape = active, o = drafts[shape];
+    const it: BlockItem = {
+      id: uid(), kind: 'block', shape, name: nameOf(shape),
+      position: { x: 0, y: 0, z: 0 }, rotation: 0, layerId: store.doc.activeLayerId,
+      size: { w: o.w, d: o.d, h: o.h },
+    };
+    if (isBeam(shape)) { it.axis = o.axis; it.size = cylinderSize(o.dia, o.len, o.axis); }
+    else if (shape === 'wall') it.size = { w: o.w, d: 0, h: o.h };
+    const v = variantOf(shape, o.variant);
+    if (v && OBJECT_BY_SHAPE[shape].variants) { it.variant = v.id; it.size = { ...v.size }; }
+    if (shape === 'door' && o.mirror) it.mirror = true;
+    return it;
+  };
+  objTile.addEventListener('pointerdown', (ev) => beginLibraryDrag(ev, objTile, makeObject, nameOf(active)));
+  objTile.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); insertAtFreeSpot(makeObject()); }
+  });
+
+  const num = (label: string, aria: string, value: number, onCommit: (v: number) => void, o: { step?: number; min?: number; max?: number; axis?: 'x' | 'y' | 'z' } = {}) =>
+    numberField({ label, ariaLabel: aria, value, step: o.step ?? 1, min: o.min ?? 0.5, max: o.max ?? 5000, suffix: 'cm', axis: o.axis, onCommit: v => { onCommit(v); updateTile(); } }).el;
+  const whd = (o: Draft, min = 0.5) => h('div', { class: 'fields-3' },
+    num(t('dim.w'), t('aria.width'), o.w, v => o.w = v, { axis: 'x', min }),
+    num(t('dim.d'), t('aria.depth'), o.d, v => o.d = v, { axis: 'y', min: Math.min(min, 0.5) }),
+    num(t('dim.h'), t('aria.height'), o.h, v => o.h = v, { axis: 'z', min }));
+  const chips = <T,>(aria: string, list: T[], label: (x: T) => string, on: (x: T) => boolean, pick: (x: T) => void, tipOf?: (x: T) => string) =>
+    h('div', { class: 'chips', role: 'group', 'aria-label': aria }, list.map(x => {
+      const el = h('button', { type: 'button', class: `chip${on(x) ? ' on' : ''}`, 'aria-pressed': String(on(x)) }, label(x));
+      if (tipOf) tip(el, tipOf(x));
+      el.addEventListener('click', () => { pick(x); render(); });
+      return el;
+    }));
+  const inlineRow = (label: string, ctl: HTMLElement) =>
+    h('div', { class: 'obj-row' }, h('span', { class: 'obj-row-label' }, label), ctl);
+
+  const renderParams = () => {
+    const shape = active, o = drafts[shape], def = OBJECT_BY_SHAPE[shape];
+    const nodes: Node[] = [];
+    if (isBeam(shape)) {
+      const sq = shape === 'square';
+      nodes.push(h('div', { class: 'fields-2' },
+        num(sq ? '□' : 'Ø', sq ? t('aria.sectionSide') : t('aria.diameter'), o.dia, v => o.dia = v, { step: 0.5 }),
+        num(t('dim.len'), t('aria.length'), o.len, v => o.len = v)));
+      nodes.push(segmented<'x' | 'z'>({
+        ariaLabel: t('obj.orientation'), size: 'sm', value: o.axis,
+        options: [{ value: 'x', label: t('obj.horizontal') }, { value: 'z', label: t('obj.vertical') }],
+        onChange: v => { o.axis = v; updateTile(); },
+      }).el);
+    } else if (shape === 'wall') {
+      nodes.push(h('div', { class: 'fields-2' },
+        num(t('dim.w'), t('aria.wallWidth'), o.w, v => o.w = v, { min: 1, axis: 'x' }),
+        num(t('dim.h'), t('aria.wallHeight'), o.h, v => o.h = v, { min: 1, axis: 'z' })));
+    } else if (shape === 'window') {
+      nodes.push(chips(t('obj.windowSizesAria'), WINDOW_PRESETS, p => p.name, p => p.w === o.w && p.h === o.h,
+        p => { o.w = p.w; o.h = p.h; o.name = p.name === FRENCH_WINDOW ? FRENCH_WINDOW : undefined; },
+        p => `${fmtCm(p.w)} × ${fmtCm(p.h)} cm`));
+      nodes.push(h('div', { class: 'fields-3' },
+        num(t('dim.w'), t('aria.width'), o.w, v => o.w = v, { min: 20, axis: 'x' }),
+        num(t('dim.d'), t('aria.frameDepth'), o.d, v => o.d = v, { min: 2, axis: 'y' }),
+        num(t('dim.h'), t('aria.height'), o.h, v => o.h = v, { min: 20, axis: 'z' })));
+    } else if (def.variants) {
+      nodes.push(chips(t('obj.variantsAria'), def.variants, v => t(v.labelKey as TKey), v => v.id === o.variant,
+        v => { o.variant = v.id; },
+        v => `${fmtCm(v.size.w)} × ${fmtCm(v.size.d)} × ${fmtCm(v.size.h)} cm`));
+    } else {
+      nodes.push(whd(o, shape === 'door' ? 20 : 0.5));
+      if (shape === 'door') nodes.push(inlineRow(t('obj.handle'), segmented<'r' | 'l'>({
+        ariaLabel: t('obj.handleAria'), size: 'sm', value: o.mirror ? 'l' : 'r', cls: 'handle-seg',
+        options: [{ value: 'r', label: t('obj.handleRight') }, { value: 'l', label: t('obj.handleLeft') }],
+        onChange: v => { o.mirror = v === 'l'; updateTile(); },
+      }).el));
+    }
+    params.replaceChildren(...nodes);
+    params.hidden = !nodes.length;
+  };
+
+  const updateTile = () => {
+    const shape = active, o = drafts[shape], def = OBJECT_BY_SHAPE[shape];
+    const name = nameOf(shape);
+    tileLabel.textContent = name;
+    objTile.setAttribute('aria-label', t('obj.tileAria', { name }));
+    let dims = '', extra = '';
+    if (isBeam(shape)) {
+      dims = `${shape === 'square' ? '□' : 'Ø'} ${fmtCm(o.dia)} × ${fmtCm(o.len)} cm`;
+      extra = o.axis === 'x' ? t('obj.horizShort') : t('obj.vertShort');
+      if (shape === 'square') { const s = cylinderSize(o.dia, o.len, o.axis); preview.replaceChildren(boxIsoSVG(s.w, s.d, s.h)); }
+      else preview.replaceChildren(icon(def.icon, 40));
+    } else {
+      const v = def.variants ? variantOf(shape, o.variant) : undefined;
+      const s = v ? v.size : { w: o.w, d: o.d, h: o.h };
+      dims = shape === 'wall' ? `${fmtCm(s.w)} × ${fmtCm(s.h)} cm` : `${fmtCm(s.w)} × ${fmtCm(s.d)} × ${fmtCm(s.h)} cm`;
+      if (shape === 'window') extra = t('obj.sill');
+      else if (shape === 'door') extra = o.mirror ? t('obj.handleLeftLong') : t('obj.handleRightLong');
+      else if (def.baseZ) extra = t('obj.aboveFloor', { cm: fmtCm(def.baseZ) });
+      preview.replaceChildren(shape === 'box' ? boxIsoSVG(s.w, s.d, s.h) : icon(def.icon, 40));
+    }
+    tileDims.textContent = dims;
+    tileExtra.textContent = extra;
+    tileExtra.hidden = !extra;
+    preview.classList.toggle('shape-art', shape !== 'box' && shape !== 'square');
+  };
+
+  const sections = new Map<ObjectGroup, HTMLElement>();
+  const typeBtns: { el: HTMLElement; shape: BlockShape }[] = [];
+  const render = () => {
+    for (const b of typeBtns) { const on = b.shape === active; b.el.classList.toggle('on', on); b.el.setAttribute('aria-checked', String(on)); b.el.tabIndex = on ? 0 : -1; }
+    const sec = sections.get(OBJECT_BY_SHAPE[active].group)!;
+    if (editor.parentElement !== sec) sec.appendChild(editor);
+    for (const [, s] of sections) s.classList.toggle('active', s === sec);
+    renderParams();
+    updateTile();
+  };
+
+  const out: HTMLElement[] = [];
+  for (const g of OBJECT_GROUPS) {
+    const defs = OBJECT_DEFS.filter(d => d.group === g.id);
+    const title = t(g.labelKey as TKey);
+    const btns = defs.map(def => {
+      const label = objLabel(def.shape);
+      const el = h('button', { type: 'button', class: 'obj-type', role: 'radio', 'aria-label': label, 'aria-checked': 'false' },
+        icon(def.icon, 20), h('span', null, label));
+      const tk = TYPE_TIPS[def.shape];
+      if (tk) tip(el, t(tk));
+      el.addEventListener('click', () => { if (active !== def.shape) { active = def.shape; render(); } });
+      typeBtns.push({ el, shape: def.shape });
+      return el;
+    });
+    // arrow keys move within the whole objects module (one radio group visually split in three)
+    for (const el of btns) el.addEventListener('keydown', (ev) => {
+      if (ev.key !== 'ArrowLeft' && ev.key !== 'ArrowRight') return;
+      ev.preventDefault();
+      const i = typeBtns.findIndex(b => b.el === el);
+      const j = (i + (ev.key === 'ArrowRight' ? 1 : -1) + typeBtns.length) % typeBtns.length;
+      typeBtns[j].el.focus(); typeBtns[j].el.click();
+    });
+    const sec = h('section', { class: `panel-section obj-group obj-group-${g.id}` },
+      h('div', { class: 'section-head' }, h('h3', { class: 'section-title' }, title.toLocaleUpperCase(locale))),
+      h('div', { class: 'obj-types', role: 'radiogroup', 'aria-label': t('obj.typeAria', { group: title }), style: `--n:${Math.max(defs.length, 3)}` }, btns));
+    sections.set(g.id, sec);
+    out.push(sec);
+  }
   render();
+  return out;
 }

@@ -1,6 +1,6 @@
 // Right inspector: composition summary / single item / multi-selection.
 import { store } from '../core/store';
-import type { Item, KallaxItem, Rotation } from '../core/types';
+import type { BlockShape, Item, KallaxItem, Rotation } from '../core/types';
 import { fmtCm, isOfficial, itemBox, kallaxNominal, unionBox, worldSize, boxesOverlap, MAX_CELLS, legsAvailable, KALLAX, cylinderDims, cylinderSize } from '../core/kallax';
 import { BASKET_VARIANTS, DEFAULT_FINISH, buildBom, fmtEur, frameFinishes, frameSold, type BasketVariant, type FinishId } from '../core/finishes';
 import { itemEuler, type Axis3 } from '../core/orient';
@@ -11,7 +11,9 @@ import { finishPicker } from './finish-picker';
 import { bomList, bomText, buildTotalFooter, currentBom } from './bom';
 import * as cmd from '../interaction/commands';
 import { MOD } from './dom';
-import { t, tn } from '../core/i18n';
+import { t, tn, type TKey } from '../core/i18n';
+import { OBJECT_BY_SHAPE, variantOf } from '../core/objects';
+import { autoName, isAutoName, objLabel, variantLabel } from './object-labels';
 
 interface Panel { el: HTMLElement; update(): void }
 
@@ -166,6 +168,8 @@ function itemPanel(id: string): Panel {
   let rowsSt: ReturnType<typeof stepper> | null = null;
   let fw: NumberField | null = null, fd: NumberField | null = null, fh: NumberField | null = null;
   let sizeGroup: HTMLElement;
+  let handleSeg: ReturnType<typeof segmented<'r' | 'l'>> | null = null;
+  let variantChips: { sync(v: string | undefined): void; setDisabled(d: boolean): void } | null = null;
   if (it0.kind === 'kallax') {
     colsSt = stepper({ label: t('insp.columns'), value: it0.cols, min: 1, max: MAX_CELLS, onChange: v => store.update(d => { const x = d.items.find(i => i.id === id); if (x && x.kind === 'kallax') { x.name = renameKallax(x, x.cols, x.rows, v, x.rows); x.cols = v; } }) });
     rowsSt = stepper({ label: t('insp.rows'), value: it0.rows, min: 1, max: MAX_CELLS, onChange: v => store.update(d => { const x = d.items.find(i => i.id === id); if (x && x.kind === 'kallax') { x.name = renameKallax(x, x.cols, x.rows, x.cols, v); x.rows = v; } }) });
@@ -201,7 +205,7 @@ function itemPanel(id: string): Panel {
     const sq = it0.shape === 'square';
     fw = numberField({ label: sq ? '□' : 'Ø', ariaLabel: sq ? t('aria.side') : t('aria.diameter'), value: c0.diameter, step: 0.5, min: 0.5, suffix: 'cm', onCommit: v => patchCyl('diameter', v) });
     fh = numberField({ label: t('dim.len'), ariaLabel: t('aria.length'), value: c0.length, step: 1, min: 0.5, suffix: 'cm', onCommit: v => patchCyl('length', v) });
-    sizeGroup = group(sq ? t('obj.square') : t('obj.round'), h('div', { class: 'fields-2' }, fw.el, fh.el));
+    sizeGroup = group(sq ? t('obj.squareBeam') : t('obj.roundBeam'), h('div', { class: 'fields-2' }, fw.el, fh.el));
   } else if (it0.shape === 'wall') {
     const patchSize = (k: 'w' | 'h', v: number) => store.update(d => {
       const x = d.items.find(i => i.id === id); if (x && x.kind === 'block') x.size = { ...x.size, [k]: v };
@@ -209,6 +213,31 @@ function itemPanel(id: string): Panel {
     fw = numberField({ label: t('dim.w'), axis: 'x', ariaLabel: t('aria.width'), value: it0.size.w, step: 1, min: 1, suffix: 'cm', onCommit: v => patchSize('w', v) });
     fh = numberField({ label: t('dim.h'), axis: 'z', ariaLabel: t('aria.height'), value: it0.size.h, step: 1, min: 1, suffix: 'cm', onCommit: v => patchSize('h', v) });
     sizeGroup = group(t('insp.wallPlane'), h('div', { class: 'fields-2' }, fw.el, fh.el));
+  } else if (it0.shape && OBJECT_BY_SHAPE[it0.shape]?.variants) {
+    // preset objects (bed, lamp, plant): pick a size, no free dimensions
+    const shape = it0.shape;
+    const setVariant = (vid: string) => store.update(d => {
+      const x = d.items.find(i => i.id === id);
+      if (!x || x.kind !== 'block' || !x.shape) return;
+      const v = variantOf(x.shape, vid);
+      if (!v || (variantOf(x.shape, x.variant)?.id === v.id && x.size.w === v.size.w && x.size.d === v.size.d && x.size.h === v.size.h)) return;
+      const wasAuto = isAutoName(x);
+      // position is the min corner: it stays put, the object grows / shrinks from there
+      x.variant = v.id;
+      x.size = { ...v.size };
+      if (wasAuto) x.name = autoName(x.shape, v.id);
+    });
+    const chipBtns = OBJECT_BY_SHAPE[shape].variants!.map(v => {
+      const el = h('button', { type: 'button', class: 'chip' }, t(v.labelKey as TKey));
+      tip(el, `${fmtCm(v.size.w)} × ${fmtCm(v.size.d)} × ${fmtCm(v.size.h)} cm`);
+      el.addEventListener('click', () => setVariant(v.id));
+      return { el, id: v.id };
+    });
+    variantChips = {
+      sync(vid) { for (const c of chipBtns) { const on = c.id === vid; c.el.classList.toggle('on', on); c.el.setAttribute('aria-pressed', String(on)); } },
+      setDisabled(d) { for (const c of chipBtns) c.el.disabled = d; },
+    };
+    sizeGroup = group(t('insp.variant'), h('div', { class: 'chips insp-chips', role: 'group', 'aria-label': t('obj.variantsAria') }, chipBtns.map(c => c.el)));
   } else {
     const patchSize = (k: 'w' | 'd' | 'h', v: number) => store.update(d => {
       const x = d.items.find(i => i.id === id); if (x && x.kind === 'block') x.size = { ...x.size, [k]: v };
@@ -216,7 +245,19 @@ function itemPanel(id: string): Panel {
     fw = numberField({ label: t('dim.w'), axis: 'x', ariaLabel: t('aria.width'), value: it0.size.w, step: 1, min: 0.5, suffix: 'cm', onCommit: v => patchSize('w', v) });
     fd = numberField({ label: t('dim.d'), axis: 'y', ariaLabel: t('aria.depth'), value: it0.size.d, step: 1, min: 0.5, suffix: 'cm', onCommit: v => patchSize('d', v) });
     fh = numberField({ label: t('dim.h'), axis: 'z', ariaLabel: t('aria.height'), value: it0.size.h, step: 1, min: 0.5, suffix: 'cm', onCommit: v => patchSize('h', v) });
-    sizeGroup = group(it0.shape === 'window' ? t('obj.window') : t('insp.blockSize'), h('div', { class: 'fields-3' }, fw.el, fd.el, fh.el));
+    if (it0.shape === 'door') {
+      handleSeg = segmented<'r' | 'l'>({
+        ariaLabel: t('obj.handleAria'), size: 'sm', value: it0.mirror ? 'l' : 'r', cls: 'handle-seg',
+        options: [{ value: 'r', label: t('obj.handleRight') }, { value: 'l', label: t('obj.handleLeft') }],
+        onChange: v => store.update(d => {
+          const x = d.items.find(i => i.id === id);
+          if (!x || x.kind !== 'block' || !!x.mirror === (v === 'l')) return;
+          if (v === 'l') x.mirror = true; else delete x.mirror;
+        }),
+      });
+    }
+    sizeGroup = group(objLabel(it0.shape), h('div', { class: 'fields-3' }, fw.el, fd.el, fh.el),
+      handleSeg ? h('div', { class: 'obj-row insp-row' }, h('span', { class: 'obj-row-label' }, t('obj.handle')), handleSeg.el) : null);
   }
 
   const priceHost = h('div', { class: 'price-host' });
@@ -256,6 +297,8 @@ function itemPanel(id: string): Panel {
   const editables: { setDisabled(d: boolean): void }[] = [fx, fy, fz, nameField];
   if (colsSt) editables.push(colsSt, rowsSt!);
   for (const f of [fw, fd, fh]) if (f) editables.push(f);
+  if (handleSeg) editables.push(handleSeg);
+  if (variantChips) editables.push(variantChips);
 
   const update = () => {
     const it = store.getItem(id);
@@ -290,9 +333,16 @@ function itemPanel(id: string): Panel {
     } else if (it.shape === 'wall') {
       typeLabel.textContent = t('insp.typeWall');
       fw!.set(it.size.w); fh!.set(it.size.h);
+    } else if (variantChips) {
+      const v = variantOf(it.shape!, it.variant);
+      typeLabel.textContent = `${objLabel(it.shape)} · ${variantLabel(it.shape, it.variant)}`;
+      variantChips.sync(v?.id);
     } else {
-      typeLabel.textContent = t('insp.typeBlock');
+      typeLabel.textContent = it.shape === 'door'
+        ? `${objLabel(it.shape)} · ${it.mirror ? t('obj.handleLeftLong') : t('obj.handleRightLong')}`
+        : objLabel(it.shape);
       fw!.set(it.size.w); fd!.set(it.size.d); fh!.set(it.size.h);
+      handleSeg?.set(it.mirror ? 'l' : 'r');
     }
     dimsHost.replaceChildren(dimsBlock(s.w, s.d, s.h));
     fx.set(it.position.x); fy.set(it.position.y); fz.set(it.position.z);
@@ -442,6 +492,7 @@ export function buildInspector(host: HTMLElement) {
 
 export type { Rotation };
 
-export function shapeIcon(shape: string | undefined): string {
-  return shape === 'cylinder' ? 'cylinder' : shape === 'square' ? 'beamSquare' : shape === 'wall' ? 'wall' : shape === 'window' ? 'window' : 'box';
+/** Glyph of a block shape (catalogue icon; legacy shape-less blocks are bricks). */
+export function shapeIcon(shape: BlockShape | undefined): string {
+  return OBJECT_BY_SHAPE[shape ?? 'box']?.icon ?? 'box';
 }

@@ -4,7 +4,8 @@
 //  3. magnetic snap to other items' faces (flush or aligned) — wins over grid
 //  4. validity: no AABB overlap with other visible items, z ≥ 0
 import type { Item, Vec3 } from '../core/types';
-import { boxesOverlap, itemBox, unionBox, worldSize, WINDOW_SILL, type Box3 } from '../core/kallax';
+import { boxesOverlap, itemBox, unionBox, worldSize, type Box3 } from '../core/kallax';
+import { baseZOf, standsOnFloor } from '../ui/object-labels';
 import { store } from '../core/store';
 import { ui } from './context';
 import { fmtCm } from '../core/kallax';
@@ -151,7 +152,11 @@ export function computePlacement(o: PlaceOpts): PlaceResult | null {
       pos.z = hb.min.z;
       locked.z = false;
       // against a wall: hang the item where the pointer is (height follows the cursor)
-      if (hitItem.kind === 'block' && hitItem.shape === 'wall') {
+      if (hitItem.kind === 'block' && hitItem.shape === 'wall' && item.kind === 'block' && standsOnFloor(item.shape)) {
+        // doors, skirtings, beds… stand on the floor at the foot of the wall (not "hung")
+        pos.z = hb.min.z;
+        locked.z = true;
+      } else if (hitItem.kind === 'block' && hitItem.shape === 'wall') {
         surface = 'wall';
         const gz = o.grab ? grab.z : s.h / 2;
         let z = hit.point.z - gz;
@@ -171,8 +176,9 @@ export function computePlacement(o: PlaceOpts): PlaceResult | null {
     }
   }
 
-  // windows sit on a standard sill ("allège") unless stacked on something
-  if (item.kind === 'block' && item.shape === 'window' && surface === 'ground') pos.z += WINDOW_SILL;
+  // catalogue base height on the floor: window sill ("allège") 90, radiator 15…
+  // default base height (window sill, radiator) only for NEW items; moved items keep theirs
+  if (item.kind === 'block' && surface === 'ground' && o.keepHeight === undefined) pos.z += baseZOf(item.shape);
 
   // ── reach guard: near the horizon (perspective / grazing views) the pointer ray
   // meets the floor hundreds of metres away. Refuse such positions instead of

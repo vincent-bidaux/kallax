@@ -19,7 +19,8 @@ import { setLineResolution } from './lines';
 import { ShearOrthoCamera } from './shear-camera';
 import { ItemView } from './item-view';
 import { geometryKey } from './item-geometry';
-import { MaterialLibrary, type VisualState } from './materials';
+import { MaterialLibrary, SHADE_UNIFORMS, KEY_LIGHT_VIEW, type VisualState } from './materials';
+import { computeWallHoles } from './wall-openings';
 import { Ground } from './ground';
 
 type FixedPreset = Exclude<ViewPreset, 'free'>;
@@ -174,8 +175,9 @@ export class Viewport implements ViewportAPI {
     this.ground.setGridVisible(s.showGrid);
     this.ground.setAxesVisible(s.showAxes);
 
-    // "Ombrage": shaded faces only (no cast shadows) — a fixed key light from
-    // front-left-top so tops read lightest, fronts mid, sides darkest.
+    // "Ombrage" is a camera-relative shading done in the face shaders
+    // (materials.ts → decorate / SHADE_UNIFORMS). These lights are kept for
+    // reference only: no face material is lit by them.
     this.hemi = new THREE.HemisphereLight(0xffffff, 0x8090a8, 1.05);
     this.hemi.position.set(0, 0, 1);
     this.sun = new THREE.DirectionalLight(0xffffff, 1.55);
@@ -706,6 +708,10 @@ export class Viewport implements ViewportAPI {
       this.updateCameraDepth();
       this.mats.setPxPerCm(this.height / this.currentH());
       this.updateSilhouettes();
+      if (store.settings.shadows) {
+        // key light attached to the camera (viewer's upper-left)
+        SHADE_UNIFORMS.uKeyDir.value.copy(KEY_LIGHT_VIEW).applyQuaternion(this.camera.quaternion).normalize();
+      }
       for (const cb of this.beforeCbs) { try { cb(); } catch (e) { console.error(e); } }
       this.renderer.render(this.scene, this.camera);
       this.css2d.render(this.ground.labelScene, this.camera);
@@ -720,15 +726,15 @@ export class Viewport implements ViewportAPI {
     }
   }
 
-  /** View-dependent outlines of round beams. */
+  /** View-dependent outlines of revolved parts (round beams, lamps, pots). */
   private updateSilhouettes() {
     const persp = this.camera === this.persp ? this.camera.position : null;
     // Parallel projections (incl. the sheared cavalier): the projection direction
     // is the ray through any pixel, obtained by unprojecting NDC near/far.
     const n = _v1.set(0, 0, -1).unproject(this.camera);
     const dir = _v2.set(0, 0, 1).unproject(this.camera).sub(n).normalize();
-    for (const v of this.views.values()) if (v.geo.cylinder) v.updateSilhouette(dir, persp);
-    if (this.ghost?.geo.cylinder) this.ghost.updateSilhouette(dir, persp);
+    for (const v of this.views.values()) if (v.geo.frusta) v.updateSilhouette(dir, persp);
+    if (this.ghost?.geo.frusta) this.ghost.updateSilhouette(dir, persp);
   }
 
   private resize() {
@@ -797,10 +803,9 @@ export class Viewport implements ViewportAPI {
   }
 
   private applyModeFlags() {
-    const s = store.settings;
     this.renderer.shadowMap.enabled = false;
-    this.hemi.visible = s.shadows;
-    this.sun.visible = s.shadows;
+    this.hemi.visible = false;
+    this.sun.visible = false;
     this.ground.setShadowsVisible(false);
   }
 
@@ -834,20 +839,28 @@ export class Viewport implements ViewportAPI {
     this.requestRender();
   }
 
+  /**
+   * Called on every doc change (including live previews while dragging): every
+   * wall's openings are recomputed from all visible items, so moving / resizing
+   * a window or door re-cuts the wall right away (the geometry key of a wall
+   * includes its holes; unchanged walls keep their cached geometry).
+   */
   private syncItems() {
     const items = store.visibleItems();
+    const holes = computeWallHoles(items);
     const seen = new Set<string>();
     for (const it of items) {
       seen.add(it.id);
       let v = this.views.get(it.id);
+      const h = holes.get(it.id);
       if (!v) {
-        v = new ItemView(it);
+        v = new ItemView(it, false, h);
         this.itemsRoot.add(v.group);
         this.views.set(it.id, v);
         v.applyMaterials(this.mats, this.stateOf(it.id));
       } else {
         const kindBefore = v.item.kind;
-        v.setItem(it);
+        v.setItem(it, h);
         // Kind change, or finish colours to update (item / global finish, basket variant).
         if (v.item.kind !== kindBefore || v.needsMaterials(this.mats)) v.applyMaterials(this.mats, v.state);
       }

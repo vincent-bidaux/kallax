@@ -11,8 +11,8 @@
 import * as THREE from 'three';
 import { LineSegments2, LineMaterial } from './lines';
 import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js';
-import { acquireGeometry, geometryKey, releaseGeometry, type ItemGeometry } from './item-geometry';
-import { MaterialLibrary, RO, type VisualState } from './materials';
+import { acquireGeometry, geometryKey, releaseGeometry, type ItemGeometry, type WallHole } from './item-geometry';
+import { MaterialLibrary, RO, faceSetOf, type VisualState } from './materials';
 import { itemBox, localSize, worldSize } from '../core/kallax';
 import { effectiveFinish } from '../core/finishes';
 import { store } from '../core/store';
@@ -30,7 +30,7 @@ export class ItemView {
   readonly inner: LineSegments2;
   readonly fit: LineSegments2;
   readonly hidden: LineSegments2;
-  /** Round beams: the two silhouette generators, rebuilt when the view changes. */
+  /** Revolved parts (round beams, lamps, pots): silhouette generators, rebuilt when the view changes. */
   readonly sil: LineSegments2;
   private silGeo = new LineSegmentsGeometry();
   private silKey = '';
@@ -39,9 +39,13 @@ export class ItemView {
   /** Finish / basket colours the current materials were picked for ('' = theme colours). */
   private matKey = '';
 
-  constructor(item: Item, readonly isGhost = false) {
+  /** Wall openings the current geometry was built with (walls only). */
+  private holes: WallHole[] | undefined;
+
+  constructor(item: Item, readonly isGhost = false, holes?: WallHole[]) {
     this.item = item;
-    this.geo = acquireGeometry(item);
+    this.holes = holes;
+    this.geo = acquireGeometry(item, holes);
     this.face = new THREE.Mesh(this.geo.face);
     this.prepass = new THREE.Mesh(this.geo.face);
     this.outer = new LineSegments2(this.geo.outer);
@@ -67,17 +71,21 @@ export class ItemView {
       this.face.receiveShadow = true;
     }
     this.group.name = isGhost ? 'ghost' : `item:${item.id}`;
-    this.setItem(item);
+    this.setItem(item, holes);
   }
 
   get geoKey(): string { return this.geo.key; }
 
-  /** Update from a (possibly new) item object; swaps geometry when the shape changed. */
-  setItem(item: Item) {
+  /**
+   * Update from a (possibly new) item object; swaps geometry when the shape
+   * (or, for a wall, the set of openings cut through it) changed.
+   */
+  setItem(item: Item, holes?: WallHole[]) {
     this.item = item;
-    if (geometryKey(item) !== this.geo.key) {
+    this.holes = holes;
+    if (geometryKey(item, holes) !== this.geo.key) {
       const old = this.geo;
-      this.geo = acquireGeometry(item);
+      this.geo = acquireGeometry(item, holes);
       this.face.geometry = this.geo.face;
       this.prepass.geometry = this.geo.face;
       this.outer.geometry = this.geo.outer;
@@ -107,37 +115,65 @@ export class ItemView {
   }
 
   /**
-   * Cylinder silhouette: the generators where the surface turns away from the
-   * viewer. `projDir` = world projection direction (towards the scene) for
-   * parallel projections; `camPos` for perspective.
+   * Silhouette generators of the revolved parts: on each frustum (cylinder or
+   * cone) the two lines where the surface turns away from the viewer.
+   * `projDir` = world projection direction (towards the scene) for parallel
+   * projections; `camPos` for perspective (direction to each part's centre).
+   *
+   * Frustum a → b (axis u, length L), radii ra → rb, Δr = rb − ra. The surface
+   * normal at radial direction e is ∝ L·e − Δr·u, so the contour satisfies
+   * e·v = Δr (u·v) / L. With p̂ = the view direction's component ⟂ u and
+   * q̂ = u × p̂: e = c·p̂ ± √(1 − c²)·q̂, c = Δr (u·v) / (L |v⊥|). For a
+   * cylinder c = 0 → e = ±q̂ = ±normalize(u × v). |c| ≥ 1: the cone is seen
+   * from inside its apex angle (only the circles show).
    */
   updateSilhouette(projDir: THREE.Vector3, camPos: THREE.Vector3 | null) {
-    const c = this.geo.cylinder;
-    if (!c) { this.sil.visible = false; return; }
+    const parts = this.geo.frusta;
+    if (!parts?.length) { this.sil.visible = false; return; }
     const inv = this.group.quaternion.clone().invert();
-    let dir: THREE.Vector3;
-    if (camPos) {
-      const centreW = this.content.localToWorld(c.a.clone().lerp(c.b, 0.5));
-      dir = centreW.sub(camPos).applyQuaternion(inv);
-    } else dir = projDir.clone().applyQuaternion(inv);
-    const axis = c.b.clone().sub(c.a).normalize();
-    const side = axis.clone().cross(dir);
-    if (side.lengthSq() < 1e-8) { this.sil.visible = false; return; } // looking down the axis: circles only
-    side.normalize().multiplyScalar(c.r);
-    const key = `${side.x.toFixed(3)},${side.y.toFixed(3)},${side.z.toFixed(3)}|${this.geo.key}`;
+    const pos: number[] = [];
+    const u = new THREE.Vector3(), v = new THREE.Vector3(), pp = new THREE.Vector3(), q = new THREE.Vector3(), e = new THREE.Vector3();
+    for (const f of parts) {
+      if (camPos) {
+        const centreW = this.content.localToWorld(f.a.clone().lerp(f.b, 0.5));
+        v.copy(centreW).sub(camPos).applyQuaternion(inv);
+      } else v.copy(projDir).applyQuaternion(inv);
+      v.normalize();
+      u.copy(f.b).sub(f.a);
+      const L = u.length();
+      if (L < 1e-6) continue;
+      u.divideScalar(L);
+      const vu = v.dot(u);
+      pp.copy(v).addScaledVector(u, -vu);
+      const vp = pp.length();
+      if (vp < 1e-4) continue; // looking down the axis: circles only
+      pp.divideScalar(vp);
+      q.copy(u).cross(pp);
+      const c = ((f.rb - f.ra) * vu) / (L * vp);
+      if (Math.abs(c) >= 1) continue;
+      const sn = Math.sqrt(1 - c * c);
+      for (const sg of [1, -1]) {
+        e.copy(pp).multiplyScalar(c).addScaledVector(q, sg * sn);
+        pos.push(f.a.x + e.x * f.ra, f.a.y + e.y * f.ra, f.a.z + e.z * f.ra, f.b.x + e.x * f.rb, f.b.y + e.y * f.rb, f.b.z + e.z * f.rb);
+      }
+    }
+    if (!pos.length) { this.sil.visible = false; return; }
     this.sil.visible = true;
+    const key = pos.map(x => x.toFixed(2)).join(',') + '|' + this.geo.key;
     if (key === this.silKey) return;
     this.silKey = key;
-    const p1 = c.a.clone().add(side), p2 = c.b.clone().add(side);
-    const q1 = c.a.clone().sub(side), q2 = c.b.clone().sub(side);
-    this.silGeo.setPositions([p1.x, p1.y, p1.z, p2.x, p2.y, p2.z, q1.x, q1.y, q1.z, q2.x, q2.y, q2.z]);
+    this.silGeo.dispose();
+    this.silGeo = new LineSegmentsGeometry();
+    this.silGeo.setPositions(pos);
     this.silGeo.computeBoundingSphere();
+    this.sil.geometry = this.silGeo;
   }
 
   /** Finish colours wanted for this item with `lib` ('' = plain theme colours). */
   private finishKey(lib: MaterialLibrary): string {
-    if (!lib.mode.finishColors || this.item.kind !== 'kallax') return '';
-    return `${effectiveFinish(this.item, store.doc.finish)}|${store.doc.basket ?? 'naturel'}`;
+    const set = faceSetOf(this.item);
+    if (!lib.mode.finishColors || this.item.kind !== 'kallax') return set;
+    return `${set}|${effectiveFinish(this.item, store.doc.finish)}|${store.doc.basket ?? 'naturel'}`;
   }
 
   /** True when the item's finish (or the document's global finish / basket) changed since the last applyMaterials. */
@@ -149,7 +185,7 @@ export class ItemView {
     const transp = lib.mode.transparency;
     this.matKey = this.finishKey(lib);
     const lines = lib.lines[state];
-    if (this.matKey && this.item.kind === 'kallax') {
+    if (lib.mode.finishColors && this.item.kind === 'kallax') {
       // Frame (+ wooden fittings) in the finish colour, BRANÄS baskets in rattan (geometry group 1).
       const fin = lib.kallaxFinish(effectiveFinish(this.item, store.doc.finish));
       const bsk = lib.basket(store.doc.basket);
@@ -158,7 +194,7 @@ export class ItemView {
       this.inner.material = fin.lines[state].inner;
       this.fit.material = bsk.lines[state].inner;
     } else {
-      this.face.material = (this.item.kind === 'block' ? lib.blockFace : lib.kallaxFace)[state];
+      this.face.material = lib.faceSet(faceSetOf(this.item))[state];
       this.outer.material = lines.outer;
       this.inner.material = lines.inner;
       this.fit.material = lines.inner;

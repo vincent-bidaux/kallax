@@ -8,16 +8,23 @@ import { KALLAX, kallaxOuter, localSize, validInserts } from '../core/kallax';
 import type { InsertType } from '../core/types';
 import type { Item, Size3 } from '../core/types';
 
-export interface CylinderInfo {
-  /** Axis end points (local, content space) and radius. */
+/**
+ * A solid of revolution part (cylinder when ra === rb, cone frustum otherwise):
+ * axis end points (local, content space) and the radius at each end.
+ */
+export interface Frustum {
   a: THREE.Vector3;
   b: THREE.Vector3;
-  r: number;
+  ra: number;
+  rb: number;
 }
 
+/** Wall opening in the wall's local plane: [x0, z0, x1, z1] (cm, clipped to the wall). */
+export type WallHole = [number, number, number, number];
+
 export interface ItemGeometry {
-  /** Set for round beams: silhouette generators are view-dependent. */
-  cylinder?: CylinderInfo;
+  /** Revolved parts (round beams, lamps, plant pots): silhouette generators are view-dependent. */
+  frusta?: Frustum[];
   key: string;
   size: Size3;
   /** Face mesh (solid, used for hidden-line removal / lighting / shadows). */
@@ -35,27 +42,50 @@ export interface ItemGeometry {
 
 const cache = new Map<string, ItemGeometry>();
 
-export function geometryKey(item: Item): string {
+/**
+ * Cache key of an item's geometry. Walls also depend on the openings cut
+ * through them (`holes`, computed by the viewport from the other items).
+ */
+export function geometryKey(item: Item, holes?: WallHole[]): string {
   if (item.kind === 'kallax') {
     const ins = validInserts(item).map(([c, r, t]) => `${c}.${r}${t[0]}`).join('');
     return `k${item.cols}x${item.rows}${item.legs ? 'L' : ''}${ins ? ':' + ins : ''}`;
   }
   const s = item.size;
-  if (item.shape === 'cylinder') return `c${item.axis ?? 'x'}${s.w}x${s.d}x${s.h}`;
-  if (item.shape === 'wall') return `w${s.w}x${s.h}`;
-  if (item.shape === 'window') return `win${s.w}x${s.d}x${s.h}`;
-  return `b${s.w}x${s.d}x${s.h}`;
+  switch (item.shape) {
+    case 'cylinder': return `c${item.axis ?? 'x'}${s.w}x${s.d}x${s.h}`;
+    case 'wall': return `w${s.w}x${s.h}${holes?.length ? '|' + holes.map(h => h.join(',')).join(';') : ''}`;
+    case 'window': return `win${s.w}x${s.d}x${s.h}`;
+    case 'door': return `door${s.w}x${s.d}x${s.h}${item.mirror ? 'M' : ''}`;
+    case 'radiator': return `rad${s.w}x${s.d}x${s.h}`;
+    case 'bed': return `bed${s.w}x${s.d}x${s.h}`;
+    case 'lamp': return `lamp${s.w}x${s.d}x${s.h}`;
+    case 'plant': return `plant${s.w}x${s.d}x${s.h}`;
+    default: return `b${s.w}x${s.d}x${s.h}`; // box, square beam, skirting
+  }
 }
 
-export function acquireGeometry(item: Item): ItemGeometry {
-  const key = geometryKey(item);
+function buildFor(key: string, item: Item, holes?: WallHole[]): ItemGeometry {
+  if (item.kind === 'kallax') return buildKallax(key, item.cols, item.rows, !!item.legs, validInserts(item));
+  const s = localSize(item);
+  switch (item.shape) {
+    case 'cylinder': return buildCylinder(key, s, item.axis ?? 'x');
+    case 'wall': return buildWall(key, s, holes ?? []);
+    case 'window': return buildWindow(key, s);
+    case 'door': return buildDoor(key, s, !!item.mirror);
+    case 'radiator': return buildRadiator(key, s);
+    case 'bed': return buildBed(key, s);
+    case 'lamp': return buildLamp(key, s);
+    case 'plant': return buildPlant(key, s);
+    default: return buildBlock(key, s);
+  }
+}
+
+export function acquireGeometry(item: Item, holes?: WallHole[]): ItemGeometry {
+  const key = geometryKey(item, holes);
   let g = cache.get(key);
   if (!g) {
-    g = item.kind === 'kallax' ? buildKallax(key, item.cols, item.rows, !!item.legs, validInserts(item))
-      : item.shape === 'cylinder' ? buildCylinder(key, localSize(item), item.axis ?? 'x')
-      : item.shape === 'wall' ? buildWall(key, localSize(item))
-      : item.shape === 'window' ? buildWindow(key, localSize(item))
-      : buildBlock(key, localSize(item));
+    g = buildFor(key, item, holes);
     cache.set(key, g);
   }
   g.refs++;
@@ -308,6 +338,41 @@ function buildBlock(key: string, s: Size3): ItemGeometry {
 
 const CYL_SEGMENTS = 64;
 
+/** Circle of radius r around `c`, in the plane perpendicular to the unit axis `u`. */
+function pushCircle(out: number[], c: THREE.Vector3, u: THREE.Vector3, r: number, seg = CYL_SEGMENTS) {
+  const e1 = Math.abs(u.z) < 0.9 ? new THREE.Vector3(0, 0, 1).cross(u).normalize() : new THREE.Vector3(1, 0, 0).cross(u).normalize();
+  const e2 = u.clone().cross(e1);
+  for (let i = 0; i < seg; i++) {
+    const t0 = (i / seg) * Math.PI * 2, t1 = ((i + 1) / seg) * Math.PI * 2;
+    pushSeg(out,
+      c.x + r * (Math.cos(t0) * e1.x + Math.sin(t0) * e2.x), c.y + r * (Math.cos(t0) * e1.y + Math.sin(t0) * e2.y), c.z + r * (Math.cos(t0) * e1.z + Math.sin(t0) * e2.z),
+      c.x + r * (Math.cos(t1) * e1.x + Math.sin(t1) * e2.x), c.y + r * (Math.cos(t1) * e1.y + Math.sin(t1) * e2.y), c.z + r * (Math.cos(t1) * e1.z + Math.sin(t1) * e2.z));
+  }
+}
+
+/** Closed frustum mesh along local Z (vertical revolved parts), base at z0 (radius r0), top at z1 (radius r1). */
+function frustumZ(cx: number, cy: number, z0: number, z1: number, r0: number, r1: number, seg = 48): THREE.BufferGeometry {
+  const g = new THREE.CylinderGeometry(r1, r0, z1 - z0, seg, 1, false);
+  g.rotateX(Math.PI / 2); // +Y (top) → +Z
+  g.translate(cx, cy, (z0 + z1) / 2);
+  return g;
+}
+
+/** Keep position + normal only and merge (non-indexed) so heterogeneous parts can be combined. */
+function mergeFaces(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
+  const list = parts.map(p => {
+    const g = p.index ? p.toNonIndexed() : p;
+    for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'normal') g.deleteAttribute(name);
+    g.clearGroups();
+    return g;
+  });
+  const m = (list.length === 1 ? list[0] : mergeGeometries(list)) ?? list[0];
+  m.clearGroups();
+  m.computeBoundingBox();
+  m.computeBoundingSphere();
+  return m;
+}
+
 /** Round beam: faces + the two end circles. Silhouette lines are added per view (ItemView). */
 function buildCylinder(key: string, s: Size3, axis: 'x' | 'z'): ItemGeometry {
   const w = Math.max(s.w, 0.1), d = Math.max(s.d, 0.1), h = Math.max(s.h, 0.1);
@@ -322,14 +387,9 @@ function buildCylinder(key: string, s: Size3, axis: 'x' | 'z'): ItemGeometry {
 
   const a = axis === 'x' ? new THREE.Vector3(0, d / 2, h / 2) : new THREE.Vector3(w / 2, d / 2, 0);
   const b = axis === 'x' ? new THREE.Vector3(w, d / 2, h / 2) : new THREE.Vector3(w / 2, d / 2, h);
+  const u = b.clone().sub(a).normalize();
   const circles: number[] = [];
-  for (const c of [a, b]) {
-    for (let i = 0; i < CYL_SEGMENTS; i++) {
-      const t0 = (i / CYL_SEGMENTS) * Math.PI * 2, t1 = ((i + 1) / CYL_SEGMENTS) * Math.PI * 2;
-      if (axis === 'x') pushSeg(circles, c.x, c.y + r * Math.cos(t0), c.z + r * Math.sin(t0), c.x, c.y + r * Math.cos(t1), c.z + r * Math.sin(t1));
-      else pushSeg(circles, c.x + r * Math.cos(t0), c.y + r * Math.sin(t0), c.z, c.x + r * Math.cos(t1), c.y + r * Math.sin(t1), c.z);
-    }
-  }
+  for (const c of [a, b]) pushCircle(circles, c, u, r);
   return {
     key,
     size: { w, d, h },
@@ -338,32 +398,72 @@ function buildCylinder(key: string, s: Size3, axis: 'x' | 'z'): ItemGeometry {
     inner: null,
     basket: null,
     all: lineGeo(circles, true),
-    cylinder: { a, b, r },
+    frusta: [{ a, b, ra: r, rb: r }],
     refs: 0,
   };
 }
 
 /**
- * Wall: an opaque plane (no thickness) in the local XZ plane at y = 0.
- * Triangles in both windings so it masks from either side with single-sided materials.
+ * Wall: an opaque plane (no thickness) in the local XZ plane at y = 0, minus
+ * the openings (doors / windows) cut through it. The rectangle is split on a
+ * grid made of the hole edges; every cell outside the holes becomes a quad
+ * (robust even when a hole touches or crosses the wall border, e.g. a door at
+ * floor level). Triangles in both windings so it masks from either side with
+ * single-sided materials. Edges = boundary of the remaining region (outer
+ * contour + hole outlines), collinear pieces merged.
  */
-function buildWall(key: string, s: Size3): ItemGeometry {
+function buildWall(key: string, s: Size3, holes: WallHole[]): ItemGeometry {
   const w = Math.max(s.w, 1), h = Math.max(s.h, 1);
-  const pos = new Float32Array([
-    0, 0, 0, w, 0, 0, w, 0, h,  0, 0, 0, w, 0, h, 0, 0, h,   // facing −Y
-    0, 0, 0, w, 0, h, w, 0, 0,  0, 0, 0, 0, 0, h, w, 0, h,   // facing +Y
-  ]);
-  const uv = new Float32Array([
-    0, 0, w, 0, w, h,  0, 0, w, h, 0, h,
-    0, 0, w, h, w, 0,  0, 0, 0, h, w, h,
-  ].map(v => v / 100));
+  const uniq = (v: number[]) => [...new Set(v.map(x => Math.round(x * 100) / 100))].sort((p, q) => p - q);
+  const xs = uniq([0, w, ...holes.flatMap(r => [r[0], r[2]])].filter(x => x >= 0 && x <= w));
+  const zs = uniq([0, h, ...holes.flatMap(r => [r[1], r[3]])].filter(z => z >= 0 && z <= h));
+  const nx = xs.length - 1, nz = zs.length - 1;
+  const filled = (i: number, j: number) => {
+    if (i < 0 || j < 0 || i >= nx || j >= nz) return false;
+    const cx = (xs[i] + xs[i + 1]) / 2, cz = (zs[j] + zs[j + 1]) / 2;
+    return !holes.some(r => cx > r[0] && cx < r[2] && cz > r[1] && cz < r[3]);
+  };
+  const pos: number[] = [];
+  const hSegs = new Map<number, [number, number][]>(); // z → x runs
+  const vSegs = new Map<number, [number, number][]>(); // x → z runs
+  const add = (m: Map<number, [number, number][]>, k: number, a: number, b: number) => {
+    const l = m.get(k); if (l) l.push([a, b]); else m.set(k, [[a, b]]);
+  };
+  for (let i = 0; i < nx; i++) {
+    for (let j = 0; j < nz; j++) {
+      if (!filled(i, j)) continue;
+      const x0 = xs[i], x1 = xs[i + 1], z0 = zs[j], z1 = zs[j + 1];
+      pos.push(
+        x0, 0, z0, x1, 0, z0, x1, 0, z1,  x0, 0, z0, x1, 0, z1, x0, 0, z1,   // facing −Y
+        x0, 0, z0, x1, 0, z1, x1, 0, z0,  x0, 0, z0, x0, 0, z1, x1, 0, z1,   // facing +Y
+      );
+      if (!filled(i - 1, j)) add(vSegs, x0, z0, z1);
+      if (!filled(i + 1, j)) add(vSegs, x1, z0, z1);
+      if (!filled(i, j - 1)) add(hSegs, z0, x0, x1);
+      if (!filled(i, j + 1)) add(hSegs, z1, x0, x1);
+    }
+  }
+  const merge = (runs: [number, number][]) => {
+    runs.sort((p, q) => p[0] - q[0]);
+    const out: [number, number][] = [];
+    for (const r of runs) {
+      const last = out[out.length - 1];
+      if (last && r[0] <= last[1] + 1e-6) last[1] = Math.max(last[1], r[1]); else out.push([r[0], r[1]]);
+    }
+    return out;
+  };
+  const outer: number[] = [];
+  for (const [z, runs] of hSegs) for (const [a, b] of merge(runs)) pushSeg(outer, a, 0, z, b, 0, z);
+  for (const [x, runs] of vSegs) for (const [a, b] of merge(runs)) pushSeg(outer, x, 0, a, x, 0, b);
+
   const face = new THREE.BufferGeometry();
-  face.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  face.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+  const uv = new Float32Array(pos.length / 3 * 2);
+  for (let i = 0, k = 0; i < pos.length; i += 3, k += 2) { uv[k] = pos[i] / 100; uv[k + 1] = pos[i + 2] / 100; }
   face.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
   face.computeVertexNormals();
+  face.computeBoundingBox();
   face.computeBoundingSphere();
-  const outer: number[] = [];
-  pushRect(outer, 0, 0, w, h, 0);
   return { key, size: { w, d: 0, h }, face, outer: lineGeo(outer), inner: null, basket: null, all: lineGeo(outer, true), refs: 0 };
 }
 
@@ -407,4 +507,237 @@ function buildWindow(key: string, s: Size3): ItemGeometry {
     pushSeg(inner, cx + k * 0.08, gy, cz - k * 0.06, cx + k * 0.3, gy, cz + k * 0.16);
   }
   return { key, size: { w, d, h }, face, outer: lineGeo(outer), inner: lineGeo(inner), basket: null, all: lineGeo([...outer, ...inner], true), refs: 0 };
+}
+
+// ── house & objects ──────────────────────────────────────────────────────
+
+/** Horizontal rectangle (x, y) at height z. */
+function pushRectXY(out: number[], x0: number, y0: number, x1: number, y1: number, z: number) {
+  pushSeg(out, x0, y0, z, x1, y0, z);
+  pushSeg(out, x1, y0, z, x1, y1, z);
+  pushSeg(out, x1, y1, z, x0, y1, z);
+  pushSeg(out, x0, y1, z, x0, y0, z);
+}
+/** Horizontal rounded rectangle at height z (corner radius r). */
+function pushRoundRectXY(out: number[], x0: number, y0: number, x1: number, y1: number, z: number, r: number, seg = 5) {
+  r = Math.min(r, (x1 - x0) / 2, (y1 - y0) / 2);
+  const pts: [number, number][] = [];
+  const corner = (cx: number, cy: number, a0: number) => {
+    for (let i = 0; i <= seg; i++) {
+      const a = a0 + (i / seg) * (Math.PI / 2);
+      pts.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]);
+    }
+  };
+  corner(x1 - r, y0 + r, -Math.PI / 2);
+  corner(x1 - r, y1 - r, 0);
+  corner(x0 + r, y1 - r, Math.PI / 2);
+  corner(x0 + r, y0 + r, Math.PI);
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i], q = pts[(i + 1) % pts.length];
+    pushSeg(out, p[0], p[1], z, q[0], q[1], z);
+  }
+}
+/** Horizontal ring of 4 segments around the box sides at height z. */
+function pushBelt(out: number[], w: number, d: number, z: number) {
+  pushRectXY(out, 0, 0, w, d, z);
+}
+
+type BoxSpec = [number, number, number, number, number, number];
+
+/**
+ * Door leaf: slab w × d × h with a subtle panel moulding line on both faces
+ * and a lever handle (rose + spindle + 12 cm lever) on both faces, ~105 cm
+ * high, 7 cm from the edge on the opening side: right as seen from the front
+ * (y = 0), left when mirrored. The lever points towards the hinge side.
+ * The handle stands ~6 cm proud of the faces (outside the item box, like a real one).
+ */
+function buildDoor(key: string, s: Size3, mirror: boolean): ItemGeometry {
+  const w = Math.max(s.w, 20), d = Math.max(s.d, 1), h = Math.max(s.h, 40);
+  const boxes: BoxSpec[] = [];
+  const outer: number[] = [];
+  pushTube(outer, 0, 0, w, h, d);
+  const inner: number[] = [];
+  // panel moulding (inset rectangle on both faces)
+  const mx = Math.min(11, w * 0.14), mb = Math.min(14, h * 0.08), mt = Math.min(11, h * 0.06);
+  for (const y of [0, d]) {
+    pushRect(inner, mx, mb, w - mx, h - mt, y);
+    pushRect(inner, mx + 1.2, mb + 1.2, w - mx - 1.2, h - mt - 1.2, y);
+  }
+  // handle
+  const hx = mirror ? 7 : w - 7;
+  const hz = Math.min(105, h - 12);
+  const toHinge = mirror ? 1 : -1;
+  const handleEdges: number[] = [];
+  for (const side of [-1, 1] as const) {
+    const y0 = side < 0 ? 0 : d;                       // face plane
+    const yo = (t: number) => y0 + side * t;           // offset outwards
+    const span = (a: number, b: number): [number, number] => { const p = yo(a), q = yo(b); return [Math.min(p, q), Math.max(p, q)]; };
+    // rose (square plate)
+    const [ry0, ry1] = span(0, 0.9);
+    boxes.push([hx - 2.6, ry0, hz - 2.6, hx + 2.6, ry1, hz + 2.6]);
+    // keyhole escutcheon below
+    const [ky0, ky1] = span(0, 0.6);
+    boxes.push([hx - 1.4, ky0, hz - 8.5, hx + 1.4, ky1, hz - 5.5]);
+    // spindle
+    const [sy0, sy1] = span(0.9, 5);
+    boxes.push([hx - 0.8, sy0, hz - 0.8, hx + 0.8, sy1, hz + 0.8]);
+    // lever (horizontal, towards the hinge side)
+    const [ly0, ly1] = span(4, 5.8);
+    const lx0 = hx - toHinge * 1, lx1 = hx + toHinge * 12;
+    boxes.push([Math.min(lx0, lx1), ly0, hz - 0.9, Math.max(lx0, lx1), ly1, hz + 0.9]);
+  }
+  for (const b of boxes) pushBox(handleEdges, ...b);
+  inner.push(...handleEdges);
+  const face = mergeFaces([boxGeo(0, 0, 0, w, d, h), ...boxes.map(b => boxGeo(...b))]);
+  return { key, size: { w, d, h }, face, outer: lineGeo(outer), inner: lineGeo(inner), basket: null, all: lineGeo([...outer, ...inner], true), refs: 0 };
+}
+
+/** Panel radiator: box with vertical channels every ~5 cm on both faces and a convector grille on top. */
+function buildRadiator(key: string, s: Size3): ItemGeometry {
+  const w = Math.max(s.w, 5), d = Math.max(s.d, 1), h = Math.max(s.h, 5);
+  const outer: number[] = [];
+  pushTube(outer, 0, 0, w, h, d);
+  const inner: number[] = [];
+  const m = Math.min(2, w / 6);
+  const n = Math.max(2, Math.round((w - 2 * m) / 5));
+  const pitch = (w - 2 * m) / n;
+  const z0 = Math.min(3, h * 0.08), z1 = h - Math.min(3, h * 0.08);
+  for (let k = 0; k <= n; k++) {
+    const x = m + k * pitch;
+    pushSeg(inner, x, 0, z0, x, 0, z1);
+    pushSeg(inner, x, d, z0, x, d, z1);
+  }
+  // top grille: inset frame + slats
+  const gi = Math.min(1.5, d / 4);
+  pushRectXY(inner, gi, gi, w - gi, d - gi, h);
+  if (d - 2 * gi > 3) pushSeg(inner, gi, d / 2, h, w - gi, d / 2, h);
+  const face = boxGeo(0, 0, 0, w, d, h);
+  face.computeBoundingSphere();
+  return { key, size: { w, d, h }, face, outer: lineGeo(outer), inner: lineGeo(inner), basket: null, all: lineGeo([...outer, ...inner], true), refs: 0 };
+}
+
+/**
+ * Bed: 20 cm slab (base + mattress seam), mattress top edge inset 1 cm,
+ * pillows at the head end (+Y) drawn as rounded outlines on the top face
+ * (they stay inside the item box) and a turned-down duvet ~1/3 from the head.
+ */
+function buildBed(key: string, s: Size3): ItemGeometry {
+  const w = Math.max(s.w, 40), d = Math.max(s.d, 60), h = Math.max(s.h, 5);
+  const outer: number[] = [];
+  pushTube(outer, 0, 0, w, h, d);
+  const inner: number[] = [];
+  // mattress top edge + base / mattress seam
+  pushRectXY(inner, 1, 1, w - 1, d - 1, h);
+  const seam = Math.min(7, h * 0.35);
+  pushBelt(inner, w, d, seam);
+  // pillows
+  const pd = Math.min(30, d / 4), py1 = d - 4, py0 = py1 - pd;
+  const pillows: [number, number][] = [];
+  if (w < 120) {
+    const pw = THREE.MathUtils.clamp(w * 0.56, 30, 55);
+    pillows.push([(w - pw) / 2, (w + pw) / 2]);
+  } else {
+    const pw = THREE.MathUtils.clamp(w * 0.36, 45, 65), gap = w * 0.08;
+    const m = (w - 2 * pw - gap) / 2;
+    pillows.push([m, m + pw], [w - m - pw, w - m]);
+  }
+  for (const [x0, x1] of pillows) {
+    pushRoundRectXY(inner, x0, py0, x1, py1, h, 6);
+    pushRoundRectXY(inner, x0 + 3, py0 + 3, x1 - 3, py1 - 3, h, 4);
+  }
+  // duvet: fold line ~1/3 from the head, turned-down band towards the head, drops on the sides
+  const yf = d - d / 3, yb = Math.min(yf + 9, py0 - 3);
+  pushSeg(inner, 1, yf, h, w - 1, yf, h);
+  pushSeg(inner, 1, yb, h, w - 1, yb, h);
+  for (const x of [0, w]) pushSeg(inner, x, yf, h, x, yf, seam);
+  const face = boxGeo(0, 0, 0, w, d, h);
+  face.computeBoundingSphere();
+  return { key, size: { w, d, h }, face, outer: lineGeo(outer), inner: lineGeo(inner), basket: null, all: lineGeo([...outer, ...inner], true), refs: 0 };
+}
+
+/** Revolved parts along local Z → faces, circles (outer edges) and frusta (view-dependent generators). */
+function revolved(parts: { z0: number; z1: number; r0: number; r1: number }[], cx: number, cy: number) {
+  const faces: THREE.BufferGeometry[] = [];
+  const circles: number[] = [];
+  const frusta: Frustum[] = [];
+  const up = new THREE.Vector3(0, 0, 1);
+  for (const p of parts) {
+    faces.push(frustumZ(cx, cy, p.z0, p.z1, p.r0, p.r1));
+    const a = new THREE.Vector3(cx, cy, p.z0), b = new THREE.Vector3(cx, cy, p.z1);
+    pushCircle(circles, a, up, p.r0, 48);
+    pushCircle(circles, b, up, p.r1, 48);
+    frusta.push({ a, b, ra: p.r0, rb: p.r1 });
+  }
+  return { faces, circles, frusta };
+}
+
+/** Table lamp: base disc, thin stem, truncated-cone shade (wider at the bottom). */
+function buildLamp(key: string, s: Size3): ItemGeometry {
+  const w = Math.max(s.w, 6), d = Math.max(s.d, 6), h = Math.max(s.h, 10);
+  const R = Math.min(w, d) / 2;
+  const baseH = THREE.MathUtils.clamp(h * 0.06, 1.4, 3);
+  const shadeH = h * 0.44;
+  const stemR = THREE.MathUtils.clamp(R * 0.06, 0.45, 0.9);
+  const rv = revolved([
+    { z0: 0, z1: baseH, r0: R * 0.6, r1: R * 0.56 },
+    { z0: baseH, z1: h - shadeH * 0.4, r0: stemR, r1: stemR },
+    { z0: h - shadeH, z1: h, r0: R, r1: R * 0.6 },
+  ], w / 2, d / 2);
+  const face = mergeFaces(rv.faces);
+  return { key, size: { w, d, h }, face, outer: lineGeo(rv.circles), inner: null, basket: null, all: lineGeo(rv.circles, true), frusta: rv.frusta, refs: 0 };
+}
+
+/**
+ * Potted plant: truncated-cone pot (~40 % of the height) with a rim, and a
+ * stylised low-poly foliage made of overlapping dodecahedra (edges from
+ * EdgesGeometry, 20° threshold → a clean faceted vector drawing). Everything
+ * stays inside the item box.
+ */
+function buildPlant(key: string, s: Size3): ItemGeometry {
+  const w = Math.max(s.w, 8), d = Math.max(s.d, 8), h = Math.max(s.h, 12);
+  const W = Math.min(w, d);
+  const potH = h * 0.4;
+  const rimH = THREE.MathUtils.clamp(h * 0.045, 1.2, 3);
+  const rTop = W * 0.3, rBot = rTop * 0.74;
+  const rv = revolved([
+    { z0: 0, z1: potH - rimH, r0: rBot, r1: rTop },
+    { z0: potH - rimH, z1: potH, r0: rTop + 0.7, r1: rTop + 0.7 },
+  ], w / 2, d / 2);
+
+  // foliage zone: [0,w] × [0,d] × [z0, h]
+  const z0 = potH * 0.86, Hf = h - z0;
+  const k = THREE.MathUtils.clamp(Hf / W, 1, 1.45);          // vertical stretch for tall plants
+  const R0 = Math.min(W / 2, Hf / (2 * k));
+  // (dx, dy) in half-widths, dz in [0,1] of the zone, radius in R0, rotation seed
+  const blobs: [number, number, number, number, number][] = [
+    [0.0, 0.08, 0.62, 0.74, 0.3],
+    [-0.42, -0.12, 0.38, 0.54, 1.7],
+    [0.44, 0.1, 0.42, 0.52, 2.9],
+    [0.08, -0.42, 0.3, 0.48, 4.1],
+    [-0.08, 0.4, 0.34, 0.46, 5.3],
+  ];
+  const leafFaces: THREE.BufferGeometry[] = [];
+  const leafEdges: number[] = [];
+  for (const [dx, dy, dz, rr, seed] of blobs) {
+    const r = R0 * rr, rz = r * k;
+    const cx = THREE.MathUtils.clamp(w / 2 + dx * W / 2, r, w - r);
+    const cy = THREE.MathUtils.clamp(d / 2 + dy * W / 2, r, d - r);
+    const cz = THREE.MathUtils.clamp(z0 + dz * Hf, z0 + rz * 0.6, h - rz);
+    const g = new THREE.DodecahedronGeometry(1, 0);
+    g.rotateX(seed * 0.7); g.rotateZ(seed * 1.3); g.rotateY(seed * 0.4);
+    // vertices stay on the unit sphere whatever the rotation: the box bound holds
+    g.scale(r, r, rz);
+    g.translate(cx, cy, cz);
+    g.computeVertexNormals();
+    leafFaces.push(g);
+    const eg = new THREE.EdgesGeometry(g, 20);
+    leafEdges.push(...(eg.getAttribute('position').array as Float32Array));
+    eg.dispose();
+  }
+  const face = mergeFaces([...rv.faces, ...leafFaces]);
+  return {
+    key, size: { w, d, h }, face,
+    outer: lineGeo(rv.circles), inner: lineGeo(leafEdges), basket: null,
+    all: lineGeo([...rv.circles, ...leafEdges], true), frusta: rv.frusta, refs: 0,
+  };
 }
