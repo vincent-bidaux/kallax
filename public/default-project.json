@@ -1,0 +1,487 @@
+{
+  "version": 1,
+  "name": "default library",
+  "items": [
+    {
+      "id": "it_mwkhrav43j1w",
+      "kind": "kallax",
+      "name": "Kallax 1×1",
+      "cols": 1,
+      "rows": 1,
+      "position": {
+        "x": 0,
+        "y": -41.5,
+        "z": 0
+      },
+      "rotation": 270,
+      "layerId": "layer_1",
+      "tilt": {
+        "x": 0,
+        "y": 180
+      },
+      "inserts": {
+        "0,0": "drawers"
+      }
+    },
+    {
+      "id": "it_mwkhrhtd4sz9",
+      "kind": "kallax",
+      "name": "Kallax 1×2",
+      "cols": 1,
+      "rows": 2,
+      "position": {
+        "x": 0,
+        "y": -39,
+        "z": 41.5
+      },
+      "rotation": 0,
+      "layerId": "layer_1",
+      "inserts": {
+        "0,0": "shelf",
+        "0,1": "drawers"
+      }
+    },
+    {
+      "id": "it_mwkhrqd957qa",
+      "kind": "kallax",
+      "name": "Kallax 4×1",
+      "cols": 4,
+      "rows": 1,
+      "position": {
+        "x": 0,
+        "y": -80.5,
+        "z": 0
+      },
+      "rotation": 0,
+      "layerId": "layer_1",
+      "legs": false,
+      "inserts": {
+        "0,0": "door",
+        "1,0": "basket",
+        "3,0": "door",
+        "2,0": "basket"
+      }
+    },
+    {
+      "id": "it_mwkhs5fq63a5",
+      "kind": "block",
+      "name": "Radiateur",
+      "size": {
+        "w": 80,
+        "d": 10,
+        "h": 60
+      },
+      "position": {
+        "x": 45,
+        "y": -10,
+        "z": 0
+      },
+      "rotation": 0,
+      "layerId": "layer_mwkjthsh23rl",
+      "shape": "radiator"
+    },
+    {
+      "id": "it_mwkht43r7h4l",
+      "kind": "kallax",
+      "name": "Kallax 4×3",
+      "cols": 4,
+      "rows": 3,
+      "position": {
+        "x": 0,
+        "y": -39,
+        "z": 118
+      },
+      "rotation": 0,
+      "layerId": "layer_1",
+      "inserts": {
+        "2,0": "shelf",
+        "1,0": "shelf",
+        "0,1": "shelf",
+        "3,1": "shelf",
+        "0,2": "door",
+        "3,2": "door"
+      }
+    },
+    {
+      "id": "it_mwkicski1trv",
+      "kind": "block",
+      "shape": "cylinder",
+      "axis": "x",
+      "name": "Poutre",
+      "size": {
+        "w": 118,
+        "d": 10,
+        "h": 10
+      },
+      "position": {
+        "x": 122,
+        "y": -23.5,
+        "z": 0
+      },
+      "rotation": 270,
+      "layerId": "layer_mwkjthsh23rl",
+      "tilt": {
+        "x": 0,
+        "y": 270
+      }
+    },
+    {
+      "id": "it_mwkifp7f3dk1",
+      "kind": "block",
+      "shape": "wall",
+      "name": "Mur",
+      "size": {
+        "w": 300,
+        "d": 0,
+        "h": 250
+      },
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": 0,
+      "layerId": "layer_mwkjt5kn1dvo"
+    },
+    {
+      "id": "it_mwkig7r04ucc",
+      "kind": "block",
+      "shape": "wall",
+      "name": "Mur",
+      "size": {
+        "w": 50,
+        "d": 0,
+        "h": 250
+      },
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": 270,
+      "layerId": "layer_mwkjt5kn1dvo",
+      "tilt": {
+        "x": 0,
+        "y": 180
+      }
+    },
+    {
+      "id": "it_mwkigw6q6f4t",
+      "kind": "block",
+      "shape": "wall",
+      "name": "Mur",
+      "size": {
+        "w": 125,
+        "d": 0,
+        "h": 250
+      },
+      "position": {
+        "x": -125,
+        "y": 50,
+        "z": 0
+      },
+      "rotation": 0,
+      "layerId": "layer_mwkjt5kn1dvo"
+    },
+    {
+      "id": "it_mwkmvmly6qbu",
+      "kind": "kallax",
+      "name": "Kallax 2×1",
+      "cols": 2,
+      "rows": 1,
+      "position": {
+        "x": 196.5,
+        "y": -39,
+        "z": 76.5
+      },
+      "rotation": 0,
+      "layerId": "layer_1",
+      "inserts": {
+        "1,0": "drawers",
+        "0,0": "shelf"
+      }
+    },
+    {
+      "id": "it_mwknc8wg1kqc",
+      "kind": "kallax",
+      "name": "Kallax 1×1",
+      "cols": 1,
+      "rows": 1,
+      "position": {
+        "x": 231.5,
+        "y": -39,
+        "z": 118
+      },
+      "rotation": 0,
+      "layerId": "layer_1"
+    },
+    {
+      "id": "it_mwkndl462igm",
+      "kind": "block",
+      "shape": "wall",
+      "name": "Mur",
+      "size": {
+        "w": 350,
+        "d": 0,
+        "h": 250
+      },
+      "position": {
+        "x": 300,
+        "y": -350,
+        "z": 0
+      },
+      "rotation": 270,
+      "layerId": "layer_mwkjt5kn1dvo",
+      "tilt": {
+        "x": 0,
+        "y": 180
+      }
+    },
+    {
+      "id": "it_mwknelie499w",
+      "kind": "block",
+      "position": {
+        "x": 293,
+        "y": -175,
+        "z": 65
+      },
+      "rotation": 270,
+      "layerId": "layer_1",
+      "shape": "window",
+      "name": "Window",
+      "size": {
+        "w": 120,
+        "d": 7,
+        "h": 135
+      }
+    },
+    {
+      "id": "it_mwkovmap1b5f",
+      "kind": "block",
+      "shape": "door",
+      "name": "Door",
+      "position": {
+        "x": -105,
+        "y": 46,
+        "z": 0
+      },
+      "rotation": 0,
+      "layerId": "layer_1",
+      "size": {
+        "w": 83,
+        "d": 4,
+        "h": 204
+      },
+      "mirror": true
+    },
+    {
+      "id": "it_mwkowltv33r7",
+      "kind": "kallax",
+      "name": "Kallax 4×1",
+      "cols": 4,
+      "rows": 1,
+      "position": {
+        "x": 100,
+        "y": -229,
+        "z": 0
+      },
+      "rotation": 180,
+      "layerId": "layer_1",
+      "legs": false,
+      "inserts": {
+        "1,0": "basket",
+        "2,0": "basket",
+        "0,0": "basket",
+        "3,0": "basket"
+      }
+    },
+    {
+      "id": "it_mwkoxlvk5yux",
+      "kind": "kallax",
+      "name": "Kallax 4×1",
+      "cols": 4,
+      "rows": 1,
+      "position": {
+        "x": 100,
+        "y": -350,
+        "z": 0
+      },
+      "rotation": 0,
+      "layerId": "layer_1",
+      "legs": false,
+      "inserts": {
+        "1,0": "basket",
+        "2,0": "basket",
+        "0,0": "drawers",
+        "3,0": "drawers"
+      }
+    },
+    {
+      "id": "it_mwkoy3vx64vh",
+      "kind": "block",
+      "shape": "bed",
+      "name": "Queen 160 bed",
+      "position": {
+        "x": 100,
+        "y": -350,
+        "z": 41.5
+      },
+      "rotation": 270,
+      "layerId": "layer_1",
+      "size": {
+        "w": 160,
+        "d": 200,
+        "h": 20
+      },
+      "variant": "queen"
+    },
+    {
+      "id": "it_mwkozsa87fnc",
+      "kind": "kallax",
+      "name": "Kallax 2×1",
+      "cols": 2,
+      "rows": 1,
+      "position": {
+        "x": 100,
+        "y": -305.5,
+        "z": 0
+      },
+      "rotation": 270,
+      "layerId": "layer_1",
+      "inserts": {
+        "0,0": "drawers",
+        "1,0": "drawers"
+      }
+    },
+    {
+      "id": "it_mwkp12c4a64m",
+      "kind": "kallax",
+      "name": "Kallax 1×1",
+      "cols": 1,
+      "rows": 1,
+      "position": {
+        "x": 258.5,
+        "y": -350,
+        "z": 0
+      },
+      "rotation": 0,
+      "layerId": "layer_1",
+      "inserts": {
+        "0,0": "shelf"
+      }
+    },
+    {
+      "id": "it_mwkp1tgybvxf",
+      "kind": "kallax",
+      "name": "Kallax 1×1",
+      "cols": 1,
+      "rows": 1,
+      "position": {
+        "x": 258.5,
+        "y": -229,
+        "z": 0
+      },
+      "rotation": 180,
+      "layerId": "layer_1",
+      "inserts": {
+        "0,0": "shelf"
+      }
+    },
+    {
+      "id": "it_mwkp2ws9ceta",
+      "kind": "kallax",
+      "name": "Kallax 1×1",
+      "cols": 1,
+      "rows": 1,
+      "position": {
+        "x": 261,
+        "y": -145,
+        "z": 0
+      },
+      "rotation": 270,
+      "layerId": "layer_1",
+      "inserts": {
+        "0,0": "drawers"
+      }
+    },
+    {
+      "id": "it_mwkp3cpedyl8",
+      "kind": "block",
+      "shape": "lamp",
+      "name": "28 cm lamp",
+      "position": {
+        "x": 270,
+        "y": -135,
+        "z": 41.5
+      },
+      "rotation": 0,
+      "layerId": "layer_1",
+      "size": {
+        "w": 18,
+        "d": 18,
+        "h": 28
+      },
+      "variant": "h28"
+    },
+    {
+      "id": "it_mwkp3srmhf99",
+      "kind": "block",
+      "shape": "lamp",
+      "name": "50 cm lamp",
+      "position": {
+        "x": 199,
+        "y": -32.5,
+        "z": 118
+      },
+      "rotation": 0,
+      "layerId": "layer_1",
+      "size": {
+        "w": 30,
+        "d": 30,
+        "h": 50
+      },
+      "variant": "h50"
+    },
+    {
+      "id": "it_mwkp427fiqwn",
+      "kind": "block",
+      "shape": "plant",
+      "name": "50 cm plant",
+      "position": {
+        "x": 235,
+        "y": -34,
+        "z": 159.5
+      },
+      "rotation": 0,
+      "layerId": "layer_1",
+      "size": {
+        "w": 32,
+        "d": 32,
+        "h": 50
+      },
+      "variant": "h50"
+    }
+  ],
+  "layers": [
+    {
+      "id": "layer_1",
+      "name": "Calque 1",
+      "visible": true,
+      "locked": false
+    },
+    {
+      "id": "layer_mwkjt5kn1dvo",
+      "name": "Calque 2",
+      "visible": true,
+      "locked": false
+    },
+    {
+      "id": "layer_mwkjthsh23rl",
+      "name": "Calque 3",
+      "visible": true,
+      "locked": false
+    }
+  ],
+  "activeLayerId": "layer_1",
+  "finish": "noyer"
+}
