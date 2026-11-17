@@ -1,0 +1,104 @@
+// ─────────────────────────────────────────────────────────────
+// Kallax Designer — shared model types
+// Units: centimetres everywhere.
+// World axes (Z-up, like an architecture / CAD tool):
+//   X → right (width)   Y → back (depth)   Z → up (height)
+// Origin (0,0,0) is the grid origin, drawn with an axis gizmo.
+// An item's `position` is the MIN corner of its world AABB
+// (left / front / bottom corner).
+// ─────────────────────────────────────────────────────────────
+
+export interface Vec3 { x: number; y: number; z: number }
+export interface Size3 { w: number; d: number; h: number } // along X, Y, Z (world, after rotation)
+
+/** Rotation about the vertical Z axis, degrees, counter-clockwise seen from above. */
+export type Rotation = 0 | 90 | 180 | 270;
+
+interface ItemBase {
+  id: string;
+  name: string;
+  position: Vec3;
+  rotation: Rotation;
+  layerId: string;
+}
+
+/** A KALLAX shelving unit: `cols` cells wide × `rows` cells high. Open front and back. */
+export interface KallaxItem extends ItemBase {
+  kind: 'kallax';
+  cols: number;
+  rows: number;
+}
+
+/** Free rectangular block to simulate custom objects (radiator, window sill, bed…). */
+export interface BlockItem extends ItemBase {
+  kind: 'block';
+  /** Local size before rotation: w along local X, d along local Y, h along Z. */
+  size: Size3;
+}
+
+export type Item = KallaxItem | BlockItem;
+
+export interface Layer {
+  id: string;
+  name: string;
+  visible: boolean;
+  locked: boolean;
+}
+
+export interface DesignDoc {
+  version: 1;
+  name: string;
+  items: Item[];
+  layers: Layer[];
+  activeLayerId: string;
+}
+
+export type ThemeName = 'blueprint' | 'paper';
+export type Projection = 'perspective' | 'orthographic';
+/** Camera presets. 'free' = user orbited away from any preset. */
+export type ViewPreset =
+  | 'iso' | 'cavalier' | 'free'
+  | 'front' | 'back' | 'left' | 'right' | 'top' | 'bottom';
+
+export interface Settings {
+  theme: ThemeName;
+  /** Lit faces + cast shadows on the floor. */
+  shadows: boolean;
+  /** Translucent faces, hidden edges drawn dashed. */
+  transparency: boolean;
+  /** Dimension lines per item. */
+  measureItems: boolean;
+  /** Overall (global) dimension lines of the whole composition. */
+  measureGlobal: boolean;
+  projection: Projection;
+  view: ViewPreset;
+  /** Cavalier receding-axis angle in degrees (30 / 45 / 60). */
+  cavalierAngle: number;
+  /** Cavalier depth ratio: 1 = cavalière, 0.5 = cabinet. */
+  cavalierRatio: number;
+  /** Grid cell in cm (visual + snap step). */
+  gridCell: number;
+  /** Snap positions to the grid cell. */
+  snapGrid: boolean;
+  /** Magnetic snapping to other items' faces. */
+  snapItems: boolean;
+  showGrid: boolean;
+  showAxes: boolean;
+}
+
+export const DEFAULT_SETTINGS: Settings = {
+  theme: 'blueprint',
+  shadows: false,
+  transparency: false,
+  measureItems: true,
+  measureGlobal: true,
+  projection: 'orthographic',
+  view: 'iso',
+  cavalierAngle: 45,
+  cavalierRatio: 1,
+  gridCell: 5,
+  snapGrid: true,
+  snapItems: true,
+  showGrid: true,
+  showAxes: true,
+};
