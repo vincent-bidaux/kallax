@@ -13,6 +13,7 @@
 import type { Item, KallaxItem, Size3, Vec3 } from './types';
 import { orientDir, orientSize } from './orient';
 import { frameSold, legsCompatible } from './finishes';
+import { OBJECT_BY_SHAPE } from './objects';
 import { t, DECIMAL } from './i18n';
 
 export const KALLAX = {
@@ -147,7 +148,7 @@ export function isWall(it: Item): boolean {
 }
 /** Structure of the room (walls, windows): not furniture, not in the shopping list. */
 export function isStructure(it: Item): boolean {
-  return it.kind === 'block' && (it.shape === 'wall' || it.shape === 'window');
+  return it.kind === 'block' && !!it.shape && !!OBJECT_BY_SHAPE[it.shape]?.structure;
 }
 /** Standard window sill height ("allège"). */
 export const WINDOW_SILL = 90;

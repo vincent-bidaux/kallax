@@ -53,9 +53,22 @@ export interface BlockItem extends ItemBase {
    * 'wall' = opaque plane (no thickness: size.d = 0) that masks what is behind it.
    * 'window' = 2-casement window: frame w × d × h, glazed openings.
    */
-  shape?: 'box' | 'cylinder' | 'square' | 'wall' | 'window';
+  shape?: BlockShape;
   axis?: 'x' | 'z';
+  /** Preset variant for objects with options (bed size, lamp / plant height). See core/objects.ts. */
+  variant?: string;
+  /** Door: handle on the left instead of the right (as seen from the front). */
+  mirror?: boolean;
 }
+
+/**
+ * Block shapes. Blocks: 'box' (brique), 'cylinder' (round beam), 'square' (square beam).
+ * House: 'wall', 'window', 'door', 'skirting', 'radiator'. Objects: 'bed', 'lamp', 'plant'.
+ */
+export type BlockShape =
+  | 'box' | 'cylinder' | 'square'
+  | 'wall' | 'window' | 'door' | 'skirting' | 'radiator'
+  | 'bed' | 'lamp' | 'plant';
 
 export type Item = KallaxItem | BlockItem;
 
