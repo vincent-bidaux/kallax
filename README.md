@@ -1,7 +1,7 @@
 # Kallax Designer
 
 Concepteur de meubles à base d'étagères IKEA **KALLAX**, rendu « plan d'architecte ».
-→ **https://kallax.pages.dev**
+→ **https://kallax.abpq.cc** (aussi https://kallax.pages.dev)
 
 ## Fonctions
 
