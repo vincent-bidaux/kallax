@@ -1,0 +1,19 @@
+# Kallax Designer API — accounts (email + 6-digit code) and project sync.
+# Served on kallax.abpq.cc/api/* (zone route), same origin as the Pages app.
+name = "kallax-api"
+main = "src/index.ts"
+compatibility_date = "2026-11-01"
+
+routes = [{ pattern = "kallax.abpq.cc/api/*", zone_name = "abpq.cc" }]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "kallax-db"
+database_id = "9641136b-ff90-4deb-9602-e4641a801041"
+
+[[send_email]]
+name = "EMAIL"
+
+[vars]
+MAIL_FROM = "noreply@abpq.cc"
+APP_ORIGIN = "https://kallax.abpq.cc"
