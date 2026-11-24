@@ -25,7 +25,9 @@ Concepteur de meubles à base d'étagères IKEA **KALLAX**, rendu « plan d'arch
 
 - FR / EN (langue du navigateur par défaut, choix dans le menu « … »)
 - Objets accrochés en hauteur : glissés sur un mur, ils suivent le curseur ; déplacés, ils gardent leur hauteur
-- Projets stockés uniquement dans le navigateur ; export JSON par projet ou « Tout exporter » (sauvegarde), réimportables
+- Compte sans mot de passe (email + code à 6 chiffres) : projets enregistrés dans le compte et retrouvés partout ; sans compte, projets dans le navigateur
+- Export JSON par projet ou « Tout exporter » (sauvegarde), réimportables
+- API : Worker `api/` (D1 + Cloudflare Email Service) sur kallax.abpq.cc/api/*
 
 ## Projet par défaut
 

@@ -22,6 +22,7 @@ import { installInsertTool } from './interaction/inserts';
 import { buildProjectsSheet, saveProject, openProjectsSheet } from './ui/projects';
 import { openJSON } from './ui/file-io';
 import { seedIfFirstLaunch } from './ui/seed';
+import { initAccount } from './ui/account';
 
 const LS_LAYOUT = 'kallax-designer:layout';
 
@@ -104,6 +105,9 @@ function boot() {
   root.addEventListener('transitionend', (e) => {
     if (e.target === root || e.target === sidebar || e.target === inspector) viewport.requestRender();
   });
+
+  // Who am I? Silent: the account button already shows the last known state.
+  void initAccount();
 
   seedIfFirstLaunch().then(loaded => {
     if (loaded) requestAnimationFrame(() => viewport.zoomToFit(false));

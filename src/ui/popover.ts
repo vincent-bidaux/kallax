@@ -11,8 +11,15 @@ export class Popover {
   private arrow: HTMLElement;
   private isOpen = false;
   onOpen?: () => void;
+  private align: 'center' | 'start' | 'end';
 
-  constructor(readonly anchor: HTMLElement, opts: { title?: string; cls?: string; role?: string; width?: number } = {}) {
+  /**
+   * `align`: 'center' (default) centres the popover under its anchor; 'start' / 'end' align its
+   * left / right edge with the anchor (for buttons near a window edge). The arrow always points
+   * at the anchor. `manual`: the anchor's click does not toggle the popover (the caller decides).
+   */
+  constructor(readonly anchor: HTMLElement, opts: { title?: string; cls?: string; role?: string; width?: number; align?: 'center' | 'start' | 'end'; manual?: boolean } = {}) {
+    this.align = opts.align ?? 'center';
     const id = `pop-${Math.random().toString(36).slice(2, 8)}`;
     this.arrow = h('div', { class: 'popover-arrow', 'aria-hidden': 'true' });
     this.body = h('div', { class: 'popover-body' });
@@ -29,7 +36,7 @@ export class Popover {
     anchor.setAttribute('aria-haspopup', opts.role === 'menu' ? 'menu' : 'dialog');
     anchor.setAttribute('aria-expanded', 'false');
     anchor.setAttribute('aria-controls', id);
-    anchor.addEventListener('click', (e) => { e.stopPropagation(); this.toggle(); });
+    if (!opts.manual) anchor.addEventListener('click', (e) => { e.stopPropagation(); this.toggle(); });
     this.el.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); this.close(true); }
       if (opts.role === 'menu' && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
@@ -78,7 +85,8 @@ export class Popover {
     this.el.classList.remove('measure');
     this.el.style.visibility = '';
     const cx = r.left + r.width / 2;
-    const left = Math.max(10, Math.min(window.innerWidth - w - 10, cx - w / 2));
+    const ideal = this.align === 'start' ? r.left - 6 : this.align === 'end' ? r.right + 6 - w : cx - w / 2;
+    const left = Math.max(10, Math.min(window.innerWidth - w - 10, ideal));
     this.el.style.left = `${Math.round(left)}px`;
     this.el.style.top = `${Math.round(r.bottom + 10)}px`;
     this.arrow.style.left = `${Math.round(cx - left)}px`;

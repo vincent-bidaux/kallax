@@ -9,6 +9,7 @@ import * as cmd from '../interaction/commands';
 import { openJSON, exportJSON, exportPNG } from './file-io';
 import { newProject, saveProject, openProjectsSheet, onProjectsChange, saveStatus, isDirty } from './projects';
 import { t, lang, setLang, type Lang } from '../core/i18n';
+import { buildAccountButton } from './account';
 
 export interface ToolbarHooks {
   toggleSidebar(): void;
@@ -17,7 +18,7 @@ export interface ToolbarHooks {
 }
 
 export function buildToolbar(host: HTMLElement, hooks: ToolbarHooks) {
-  // ── left: sidebar toggle, glyph, document name, undo/redo ──
+  // ── left: sidebar toggle, glyph, document name, projects / account, undo/redo ──
   const sideBtn = button({ icon: 'sidebarLeft', label: t('tb.toggleSidebar'), iconOnly: true, cls: 'tb-btn', iconSize: 18, onClick: hooks.toggleSidebar });
   const glyph = h('div', { class: 'app-glyph', 'aria-hidden': 'true' }, icon('cube', 17));
   const nameInput = h('input', {
@@ -46,8 +47,10 @@ export function buildToolbar(host: HTMLElement, hooks: ToolbarHooks) {
   const redoBtn = button({ icon: 'redo', label: t('tb.redo'), iconOnly: true, kbd: `${SHIFT}${MOD}Z`, cls: 'tb-btn', iconSize: 18, onClick: () => store.redo() });
   const history = h('div', { class: 'tb-group' }, undoBtn, redoBtn);
   const projBtn = button({ icon: 'folder', label: t('tb.projects'), iconOnly: true, kbd: `${MOD}O`, cls: 'tb-btn', iconSize: 18, onClick: openProjectsSheet });
-  const saveBtn = button({ icon: 'save', label: t('tb.save'), iconOnly: true, kbd: `${MOD}S`, cls: 'tb-btn', iconSize: 18, onClick: () => saveProject() });
-  const files = h('div', { class: 'tb-group' }, projBtn, saveBtn);
+  const saveBtn = button({ icon: 'floppy', label: t('tb.save'), iconOnly: true, kbd: `${MOD}S`, cls: 'tb-btn', iconSize: 18, onClick: () => saveProject() });
+  const moreBtn = button({ icon: 'moreCircle', label: t('tb.more'), iconOnly: true, cls: 'tb-btn', iconSize: 19 });
+  const accountBtn = buildAccountButton({ openProjects: openProjectsSheet });
+  const files = h('div', { class: 'tb-group' }, projBtn, saveBtn, moreBtn, accountBtn);
 
   // ── center: view + projection ──
   const viewSeg = segmented<'iso' | 'cavalier' | 'free'>({
@@ -80,7 +83,6 @@ export function buildToolbar(host: HTMLElement, hooks: ToolbarHooks) {
   const renduBtn = button({ icon: 'render', label: t('tb.render'), tip: t('tb.renderTip'), cls: 'tb-btn tb-pill', iconSize: 17 });
   const grilleBtn = button({ icon: 'grid', label: t('tb.grid'), tip: t('tb.gridTip'), cls: 'tb-btn tb-pill', iconSize: 17 });
   const fitBtn = button({ icon: 'fit', label: t('tb.fit'), tip: t('tb.fitTip'), kbd: 'F', cls: 'tb-btn tb-pill', iconSize: 17, onClick: () => cmd.zoomToFit() });
-  const moreBtn = button({ icon: 'moreCircle', label: t('tb.more'), iconOnly: true, cls: 'tb-btn', iconSize: 19 });
   const inspBtn = button({ icon: 'sidebarRight', label: t('tb.toggleInspector'), iconOnly: true, cls: 'tb-btn', iconSize: 18, onClick: hooks.toggleInspector });
 
   // Cotes
@@ -136,12 +138,12 @@ export function buildToolbar(host: HTMLElement, hooks: ToolbarHooks) {
   );
 
   // … menu
-  const menu = new Popover(moreBtn, { role: 'menu', cls: 'menu-pop', width: 248 });
+  const menu = new Popover(moreBtn, { role: 'menu', cls: 'menu-pop', width: 248, align: 'start' });
   fillMenu(menu, [
     { label: t('menu.newProject'), icon: 'docNew', action: () => newProject() },
     { label: t('menu.projects'), icon: 'folder', kbd: `${MOD}O`, action: openProjectsSheet },
-    { label: t('menu.save'), icon: 'save', kbd: `${MOD}S`, action: () => saveProject(), separatorBefore: true },
-    { label: t('menu.saveAs'), icon: 'duplicate', kbd: `${SHIFT}${MOD}S`, action: () => saveProject(true) },
+    { label: t('menu.save'), icon: 'floppy', kbd: `${MOD}S`, action: () => saveProject(), separatorBefore: true },
+    { label: t('menu.saveAs'), icon: 'floppy', kbd: `${SHIFT}${MOD}S`, action: () => saveProject(true) },
     { label: t('menu.importJSON'), icon: 'folder', action: openJSON, separatorBefore: true },
     { label: t('menu.exportJSON'), icon: 'download', action: exportJSON },
     { label: t('menu.exportPNG'), icon: 'photo', action: exportPNG },
@@ -156,11 +158,14 @@ export function buildToolbar(host: HTMLElement, hooks: ToolbarHooks) {
   const right = h('div', { class: 'tb-right' },
     h('div', { class: 'tb-group' }, cotesBtn, renduBtn, grilleBtn),
     h('div', { class: 'tb-sep', 'aria-hidden': 'true' }),
-    fitBtn, moreBtn,
+    fitBtn,
     h('div', { class: 'tb-sep', 'aria-hidden': 'true' }),
     inspBtn);
 
-  const left = h('div', { class: 'tb-left' }, sideBtn, glyph, docBlock, h('div', { class: 'tb-sep', 'aria-hidden': 'true' }), files, history);
+  // left: sidebar · glyph + document · projects / save / … / account · undo / redo
+  const left = h('div', { class: 'tb-left' }, sideBtn, glyph, docBlock,
+    h('div', { class: 'tb-sep', 'aria-hidden': 'true' }), files,
+    h('div', { class: 'tb-sep', 'aria-hidden': 'true' }), history);
   host.append(left, center, right);
   host.setAttribute('role', 'toolbar');
   host.setAttribute('aria-label', t('tb.aria'));
