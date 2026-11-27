@@ -1,9 +1,11 @@
 // User commands shared by keyboard shortcuts, inspector and menus.
 // Each command = at most one store.update() (one undo step).
 import { store, uid } from '../core/store';
-import type { Item, Settings, ViewPreset, Vec3 } from '../core/types';
-import { rotateVec, rotatedOrientation, type Axis3 } from '../core/orient';
-import { itemBox, unionBox, worldSize, boxesOverlap, collides } from '../core/kallax';
+import type { Item, Rotation, Settings, ViewPreset, Vec3 } from '../core/types';
+import { angleDiff, frameAngle, isRightAngle, rotateVec, rotatedOrientation, sameFrame, type Axis3 } from '../core/orient';
+import { unionBox, worldSize, collides } from '../core/kallax';
+import { fromFrame, itemOBB, obbFrameBox } from '../core/obb';
+import { itemsFree } from './placement';
 import { ui } from './context';
 import { toast } from '../ui/dom';
 import { t, tn } from '../core/i18n';
@@ -36,30 +38,32 @@ export function selectAll() {
   store.select(store.visibleItems().map(i => i.id));
 }
 
-/** Duplicate the selection flush against its group bbox along +X / +Y / +Z, skipping occupied slots. */
+/**
+ * Duplicate the selection flush against its group box along +X / +Y / +Z,
+ * skipping occupied slots. A turned selection (all items at the same angle
+ * modulo 90°) is duplicated along its own axes (the frame, core/obb.ts).
+ */
 export function duplicate(axis: 'x' | 'y' | 'z' = 'x') {
   const sel = store.selectedItems();
   if (!sel.length) return;
-  const u = unionBox(sel)!;
-  const step = { x: u.max.x - u.min.x, y: u.max.y - u.min.y, z: u.max.z - u.min.z }[axis];
+  const phi0 = frameAngle(sel[0].rotation);
+  const phi = sel.every(i => sameFrame(i.rotation, phi0)) ? phi0 : 0;
+  const boxes = sel.map(i => obbFrameBox(itemOBB(i), phi));
+  const lo = Math.min(...boxes.map(b => b.min[axis])), hi = Math.max(...boxes.map(b => b.max[axis]));
+  const step = hi - lo;
+  const dir = axis === 'z' ? { x: 0, y: 0, z: 1 } : fromFrame(axis === 'x' ? { x: 1, y: 0, z: 0 } : { x: 0, y: 1, z: 0 }, phi);
+  const at = (it: Item, off: number): Vec3 => ({ x: r3(it.position.x + dir.x * off), y: r3(it.position.y + dir.y * off), z: r3(it.position.z + dir.z * off) });
   // items with collisions off neither need a free slot nor block one
-  const others = store.visibleItems().filter(collides).map(itemBox);
   const solid = sel.filter(collides);
   let k = 1;
   for (; k < 30 && solid.length; k++) {
-    const off = step * k;
-    const clash = solid.some(it => {
-      const b = itemBox(it);
-      b.min[axis] += off; b.max[axis] += off;
-      return others.some(o => boxesOverlap(b, o));
-    });
-    if (!clash) break;
+    if (itemsFree(solid.map(it => ({ item: it, pos: at(it, step * k) })), [])) break;
   }
   const off = step * k;
   const copies: Item[] = sel.map(it => {
     const c = structuredClone(it) as Item;
     c.id = uid();
-    c.position = { ...c.position, [axis]: r3(c.position[axis] + off) };
+    c.position = at(it, off);
     if (store.isLocked(c)) c.layerId = store.doc.activeLayerId;
     return c;
   });
@@ -125,41 +129,125 @@ export function renameGroup(gid: string, name: string) {
   store.update(d => { d.groups = { ...(d.groups ?? {}), [gid]: { name } }; });
 }
 
-/** Rotate the editable selection by ±90° about a world axis through its group centre, then re-snap to the grid. */
-export function rotateSelection(delta: 90 | -90, axis: Axis3 = 'z') {
+// ── rotation ──
+/** Default rotation step about Z (R / ⇧R, inspector −/+). */
+export const ROT_STEP = 45;
+
+/** Reference item of a selection for its angle (inspector, rotation handle): the first one in document order. */
+export function rotationRef(items: Item[]): Item | null {
+  if (!items.length) return null;
+  const ids = new Set(items.map(i => i.id));
+  return store.items.find(i => ids.has(i.id)) ?? items[0];
+}
+
+/**
+ * Pivot of a rotation about Z: the centre of the items' common box in the
+ * frame of the reference angle (core/obb.ts). It turns with the items, so a
+ * rotation in several steps (45° + 45°, or a drag of the handle) ends where
+ * one rotation of the total angle would: one item turns about its centre,
+ * an axis-aligned group about the centre of its bounding box.
+ */
+export function rotationPivot(items: Item[], refAngle = rotationRef(items)?.rotation ?? 0): Vec3 {
+  const phi = frameAngle(refAngle);
+  const bs = items.map(i => obbFrameBox(itemOBB(i), phi));
+  const c = {
+    x: (Math.min(...bs.map(b => b.min.x)) + Math.max(...bs.map(b => b.max.x))) / 2,
+    y: (Math.min(...bs.map(b => b.min.y)) + Math.max(...bs.map(b => b.max.y))) / 2,
+    z: (Math.min(...bs.map(b => b.min.z)) + Math.max(...bs.map(b => b.max.z))) / 2,
+  };
+  return fromFrame(c, phi);
+}
+
+export interface RotatedState { id: string; rotation: number; tilt?: { x: Rotation; y: Rotation }; position: Vec3 }
+
+/** New angles / positions of `items` turned by `delta` degrees about Z around `pivot` (no snapping). */
+export function zRotationLayout(items: Item[], delta: number, pivot: Vec3): RotatedState[] {
+  return items.map(it => {
+    const c = itemOBB(it).c;
+    const nc = rotateVec({ x: c.x - pivot.x, y: c.y - pivot.y, z: 0 }, 'z', delta);
+    const o = rotatedOrientation(it, 'z', delta);
+    const ns = worldSize({ ...it, rotation: o.rotation } as Item);
+    return {
+      id: it.id, rotation: o.rotation, tilt: o.tilt,
+      position: { x: r3(pivot.x + nc.x - ns.w / 2), y: r3(pivot.y + nc.y - ns.d / 2), z: it.position.z },
+    };
+  });
+}
+
+/** Write rotated states into a draft document. */
+export function applyRotated(d: import('../core/types').DesignDoc, next: RotatedState[]) {
+  const byId = new Map(next.map(n => [n.id, n]));
+  for (const it of d.items) {
+    const n = byId.get(it.id);
+    if (!n) continue;
+    it.rotation = n.rotation;
+    if (n.tilt) it.tilt = n.tilt; else delete it.tilt;
+    it.position = { ...n.position };
+  }
+}
+
+/**
+ * Rotate the editable selection by `delta` degrees:
+ * - about Z (any angle) around its pivot (rotationPivot); when the result is
+ *   axis-aligned (0 / 90 / 180 / 270°) the group's min corner is re-snapped to
+ *   the grid, as before free rotation;
+ * - about X / Y (±90°): about the axes of the items' frame (they must share it).
+ */
+export function rotateSelection(delta: number, axis: Axis3 = 'z') {
   if (warnLocked()) return;
   const sel = editableSelection();
   if (!sel.length) return;
-  const u = unionBox(sel)!;
-  const C = { x: (u.min.x + u.max.x) / 2, y: (u.min.y + u.max.y) / 2, z: (u.min.z + u.max.z) / 2 };
+  if (axis === 'z') {
+    const next = zRotationLayout(sel, delta, rotationPivot(sel));
+    if (store.settings.snapGrid && next.every(n => isRightAngle(n.rotation))) {
+      const g = store.settings.gridCell;
+      const mx = Math.min(...next.map(n => n.position.x)), my = Math.min(...next.map(n => n.position.y));
+      const dx = Math.round(mx / g) * g - mx, dy = Math.round(my / g) * g - my;
+      for (const n of next) n.position = { x: r3(n.position.x + dx), y: r3(n.position.y + dy), z: n.position.z };
+    }
+    store.update(d => applyRotated(d, next));
+    return;
+  }
+  const phi = frameAngle(sel[0].rotation);
+  if (!sel.every(i => sameFrame(i.rotation, phi))) { toast(t('cmd.tiltMixed')); return; }
+  const bs = sel.map(i => obbFrameBox(itemOBB(i), phi));
+  const Cf = {
+    x: (Math.min(...bs.map(b => b.min.x)) + Math.max(...bs.map(b => b.max.x))) / 2,
+    y: (Math.min(...bs.map(b => b.min.y)) + Math.max(...bs.map(b => b.max.y))) / 2,
+    z: (Math.min(...bs.map(b => b.min.z)) + Math.max(...bs.map(b => b.max.z))) / 2,
+  };
+  const C = fromFrame(Cf, phi);
   const next = sel.map(it => {
-    const s = worldSize(it);
-    const c = { x: it.position.x + s.w / 2 - C.x, y: it.position.y + s.d / 2 - C.y, z: it.position.z + s.h / 2 - C.z };
-    const nc = rotateVec(c, axis, delta);
+    const c0 = itemOBB(it).c;
+    const nc = rotateVec({ x: c0.x - C.x, y: c0.y - C.y, z: c0.z - C.z }, axis, delta, phi);
     const o = rotatedOrientation(it, axis, delta);
     const ns = worldSize({ ...it, rotation: o.rotation, tilt: o.tilt } as Item);
-    return { id: it.id, o, pos: { x: C.x + nc.x - ns.w / 2, y: C.y + nc.y - ns.d / 2, z: C.z + nc.z - ns.h / 2 } };
+    return { id: it.id, rotation: o.rotation, tilt: o.tilt, position: { x: C.x + nc.x - ns.w / 2, y: C.y + nc.y - ns.d / 2, z: C.z + nc.z - ns.h / 2 } };
   });
   // keep the group on/above the floor (X/Y rotations change heights): rest it where it was
-  const minZ0 = u.min.z;
-  const minZ1 = Math.min(...next.map(n => n.pos.z));
-  const dz = axis === 'z' ? 0 : minZ0 - minZ1;
-  // re-snap the group's min corner
+  const minZ0 = Math.min(...sel.map(i => i.position.z));
+  const dz = minZ0 - Math.min(...next.map(n => n.position.z));
+  // re-snap the group's min corner (axis-aligned items)
   let dx = 0, dy = 0;
-  if (store.settings.snapGrid) {
+  if (store.settings.snapGrid && !phi) {
     const g = store.settings.gridCell;
-    const mx = Math.min(...next.map(n => n.pos.x)), my = Math.min(...next.map(n => n.pos.y));
+    const mx = Math.min(...next.map(n => n.position.x)), my = Math.min(...next.map(n => n.position.y));
     dx = Math.round(mx / g) * g - mx; dy = Math.round(my / g) * g - my;
   }
-  store.update(d => {
-    for (const n of next) {
-      const it = d.items.find(i => i.id === n.id);
-      if (!it) continue;
-      it.rotation = n.o.rotation;
-      if (n.o.tilt) it.tilt = n.o.tilt; else delete it.tilt;
-      it.position = { x: r3(n.pos.x + dx), y: r3(n.pos.y + dy), z: r3(Math.max(0, n.pos.z + dz)) };
-    }
-  });
+  for (const n of next) n.position = { x: r3(n.position.x + dx), y: r3(n.position.y + dy), z: r3(Math.max(0, n.position.z + dz)) };
+  store.update(d => applyRotated(d, next));
+}
+
+/** Turn the editable selection so that its reference item faces `angle` (one undo step). */
+export function rotateSelectionTo(angle: number) {
+  if (warnLocked()) return;
+  const sel = editableSelection();
+  const ref = rotationRef(sel);
+  if (!ref) return;
+  const delta = angleDiff(angle, ref.rotation);
+  if (Math.abs(delta) < 1e-6) return;
+  const next = zRotationLayout(sel, delta, rotationPivot(sel));
+  store.update(d => applyRotated(d, next));
 }
 
 export function nudge(dx: number, dy: number, dz: number) {

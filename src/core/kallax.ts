@@ -11,7 +11,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import type { Item, KallaxItem, Size3, Vec3 } from './types';
-import { orientDir, orientSize } from './orient';
+import { orientDir, orientFrameSize, orientSize } from './orient';
 import { frameSold, legsCompatible } from './finishes';
 import { OBJECT_BY_SHAPE } from './objects';
 import { t, DECIMAL } from './i18n';
@@ -102,9 +102,18 @@ export function localSize(item: Item): Size3 {
   return { ...item.size };
 }
 
-/** World-axis size after rotation about Z. */
+/** World AABB size (after rotation: for a turned item, the size of its bounding box). */
 export function worldSize(item: Item): Size3 {
   return orientSize(localSize(item), item);
+}
+
+/**
+ * Size of the item in its own frame (its oriented box, core/obb.ts): the
+ * real width × depth × height of a turned item. Equals worldSize() for items
+ * at 0 / 90 / 180 / 270°.
+ */
+export function frameSize(item: Item): Size3 {
+  return orientFrameSize(localSize(item), item);
 }
 
 export interface Box3 { min: Vec3; max: Vec3 }

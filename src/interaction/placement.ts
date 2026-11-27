@@ -2,18 +2,20 @@
 //  1. surface under the pointer (ground / top face / side face of an item)
 //  2. grid snap of the free axes
 //  3. magnetic snap to other items' faces (flush or aligned) — wins over grid
-//  4. validity: no AABB overlap with other visible items, z ≥ 0 — items whose
-//     "Collisions" switch is off neither block nor are blocked (core/kallax collides)
-import type { Item, Rotation, Vec3 } from '../core/types';
-import { boxesOverlap, collides, itemBox, unionBox, worldSize, type Box3 } from '../core/kallax';
+//  4. validity: no overlap of the oriented boxes (core/obb.ts) with other
+//     visible items, z ≥ 0 — items whose "Collisions" switch is off neither
+//     block nor are blocked (core/kallax collides)
+import type { Item, Vec3 } from '../core/types';
+import { collides, frameSize, itemBox, unionBox, worldSize, type Box3 } from '../core/kallax';
+import { frameAxes, itemOBB, obbFrameBox, obbFromFrameBox, obbOverlap, obbSupport, fromFrame, toFrame, type OBB } from '../core/obb';
 import { itemBaseZ, itemStandsOnFloor } from '../ui/object-labels';
 import { isWallHung } from '../core/objects-params';
-import { isUpright } from '../core/orient';
+import { angleDiff, frameAngle, isRightAngle, isUpright, normAngle, orientDir, sameFrame } from '../core/orient';
 import { store } from '../core/store';
 import { ui } from './context';
 import { fmtCm } from '../core/kallax';
 import { t } from '../core/i18n';
-import { variantOf } from '../core/objects';
+import { cutsWalls, variantOf } from '../core/objects';
 
 type Axis = 'x' | 'y' | 'z';
 const AXES: Axis[] = ['x', 'y', 'z'];
@@ -35,11 +37,11 @@ export interface PlaceResult {
   /** Short description for the status bar (current UI language). */
   label: string | null;
   /**
-   * Wall-hung items (frames, wall TV) dropped on a wall face are turned to
-   * face away from it: the new rotation about Z when it differs from the
+   * Wall-hung items (frames, wall TV) and openings (windows, doors) dropped on
+   * a wall face are turned to face away from it: the new rotation about Z when it differs from the
    * item's, with the grab point to use from now on (callers apply both).
    */
-  rotation?: Rotation;
+  rotation?: number;
   grab?: Vec3;
 }
 
@@ -99,50 +101,54 @@ function boxAt(item: Item, p: Vec3): Box3 {
 
 /**
  * Hanging objects (trailing plants, see ObjectVariant.hang): height of the
- * resting plane above the item's base, and the world side of the front strip
- * that may hang below it. Null for every other item (and tilted ones).
+ * resting plane above the item's base, and the side of the front strip that
+ * may hang below it — `axis` is an axis of the item's frame (core/obb.ts;
+ * the world axes for items at 0 / 90 / 180 / 270°). Null for every other
+ * item (and tilted ones).
  */
 export function hangOf(item: Item): { hang: number; depth: number; axis: 'x' | 'y'; side: -1 | 1 } | null {
   if (item.kind !== 'block' || !item.shape || (item.tilt && (item.tilt.x || item.tilt.y))) return null;
   const v = variantOf(item.shape, item.variant);
   if (!v?.hang) return null;
   const depth = v.hangDepth ?? 0;
-  // local front (−Y) after the rotation about Z (CCW): 0 → −Y, 90 → +X, 180 → +Y, 270 → −X
-  switch (item.rotation) {
-    case 90: return { hang: v.hang, depth, axis: 'x', side: 1 };
-    case 180: return { hang: v.hang, depth, axis: 'y', side: 1 };
-    case 270: return { hang: v.hang, depth, axis: 'x', side: -1 };
+  // local front (−Y) after the quarter turns within the frame (CCW): 0 → −Y, 90 → +X, 180 → +Y, 270 → −X
+  const q = Math.round(normAngle(item.rotation - frameAngle(item.rotation)) / 90) % 4;
+  switch (q) {
+    case 1: return { hang: v.hang, depth, axis: 'x', side: 1 };
+    case 2: return { hang: v.hang, depth, axis: 'y', side: 1 };
+    case 3: return { hang: v.hang, depth, axis: 'x', side: -1 };
     default: return { hang: v.hang, depth, axis: 'y', side: -1 };
   }
 }
 
 /**
- * Boxes used for collisions: the item box, or for hanging objects the body
- * above the resting plane + the front strip below it (so a trailing plant can
- * sit on a shelf with its stems falling in front of the shelf).
+ * Oriented boxes used for collisions: the item box, or for hanging objects the
+ * body above the resting plane + the front strip below it (so a trailing plant
+ * can sit on a shelf with its stems falling in front of the shelf).
  */
-export function collisionBoxes(item: Item, p: Vec3 = item.position): Box3[] {
-  const b = boxAt(item, p);
+export function collisionBoxes(item: Item, p: Vec3 = item.position): OBB[] {
+  const o = itemOBB(item, p);
   const hg = hangOf(item);
-  if (!hg) return [b];
+  if (!hg) return [o];
+  const b = obbFrameBox(o);
   const zr = b.min.z + hg.hang;
   const body: Box3 = { min: { ...b.min, z: zr }, max: { ...b.max } };
   const strip: Box3 = { min: { ...b.min }, max: { ...b.max, z: zr } };
   if (hg.side < 0) strip.max[hg.axis] = b.min[hg.axis] + hg.depth;
   else strip.min[hg.axis] = b.max[hg.axis] - hg.depth;
-  return [body, strip];
+  return [obbFromFrameBox(body, o.a), obbFromFrameBox(strip, o.a)];
 }
 
 /**
- * Collision test of a set of boxes against all other visible items that
- * collide (objects whose "Collisions" switch is off never block).
+ * Collision test of a set of oriented boxes against all other visible items
+ * that collide (objects whose "Collisions" switch is off never block).
  */
-export function boxesFree(boxes: Box3[], ignoreIds: string[]): boolean {
+export function boxesFree(boxes: OBB[], ignoreIds: string[]): boolean {
   const ign = new Set(ignoreIds);
   const others = store.visibleItems().filter(i => !ign.has(i.id) && collides(i)).flatMap(i => collisionBoxes(i));
   for (const b of boxes) {
-    if (b.min.z < -0.01) return false;
-    for (const o of others) if (boxesOverlap(b, o)) return false;
+    if (b.c.z - b.h.z < -0.01) return false;
+    for (const o of others) if (obbOverlap(b, o)) return false;
   }
   return true;
 }
@@ -153,11 +159,11 @@ export function boxesFree(boxes: Box3[], ignoreIds: string[]): boolean {
  * colliding visible item (`ignoreIds` = the moved items themselves).
  */
 export function itemsFree(list: { item: Item; pos?: Vec3 }[], ignoreIds: string[]): boolean {
-  const solid: Box3[] = [];
+  const solid: OBB[] = [];
   for (const { item, pos } of list) {
     const bs = collisionBoxes(item, pos ?? item.position);
     if (collides(item)) solid.push(...bs);
-    else if (bs.some(b => b.min.z < -0.01)) return false;
+    else if (bs.some(b => b.c.z - b.h.z < -0.01)) return false;
   }
   return boxesFree(solid, ignoreIds);
 }
@@ -182,7 +188,7 @@ function isReasonable(pos: Vec3, size: Record<Axis, number>, others: Item[]): bo
 function defaultGrab(item: Item, s: { w: number; d: number }): Vec3 {
   const g = { x: s.w / 2, y: s.d / 2, z: 0 };
   const hg = hangOf(item);
-  if (hg) {
+  if (hg && isRightAngle(item.rotation)) {
     const len = hg.axis === 'x' ? s.w : s.d;
     g[hg.axis] = hg.side < 0 ? (len + hg.depth) / 2 : (len - hg.depth) / 2;
   }
@@ -191,29 +197,46 @@ function defaultGrab(item: Item, s: { w: number; d: number }): Vec3 {
 
 /**
  * Rotation about Z that turns an item's front (local −Y) along a wall face's
- * outward normal, i.e. its back (local +Y) against the wall:
+ * outward normal, i.e. its back (local +Y) against the wall — any angle:
  * −Y → 0, +X → 90, +Y → 180, −X → 270.
  */
-export function rotationFacing(n: Vec3): Rotation {
-  if (Math.abs(n.x) > Math.abs(n.y)) return n.x > 0 ? 90 : 270;
-  return n.y > 0 ? 180 : 0;
+export function rotationFacing(n: Vec3): number {
+  return normAngle((Math.atan2(n.x, -n.y) * 180) / Math.PI);
 }
+
+const dot2 = (a: Vec3, b: Vec3) => a.x * b.x + a.y * b.y;
 
 /** The wall whose face a wall-hung item's back lies on (face normal `n` = the item's front), if any. */
 function wallBehind(it: Item, n: Vec3, candidates: Item[]): Item | null {
-  const b = itemBox(it);
-  const ax: Axis = Math.abs(n.x) > 0.5 ? 'x' : 'y', other: Axis = ax === 'x' ? 'y' : 'x';
-  const plane = (n[ax] > 0 ? b.min : b.max)[ax];
+  const o = itemOBB(it);
+  const back = dot2(o.c, n) - obbSupport(o, n);
+  const u = { x: -n.y, y: n.x, z: 0 };
   for (const w of candidates) {
     if (w.kind !== 'block' || w.shape !== 'wall') continue;
-    const wb = itemBox(w);
-    if (Math.abs(wb.min[ax] - plane) > 0.05 || Math.abs(wb.max[ax] - plane) > 0.05) continue;
-    if (wb.max[other] < b.min[other] || wb.min[other] > b.max[other] || wb.max.z < b.min.z || wb.min.z > b.max.z) continue;
+    const wn = orientDir(w, { x: 0, y: 1, z: 0 });
+    if (Math.abs(dot2(wn, n)) < 0.999) continue;
+    const wo = itemOBB(w);
+    if (Math.abs(dot2(wo.c, n) - back) > 0.05) continue;
+    if (Math.abs(dot2(wo.c, u) - dot2(o.c, u)) > obbSupport(wo, u) + obbSupport(o, u)) continue;
+    if (wo.c.z + wo.h.z < o.c.z - o.h.z || wo.c.z - wo.h.z > o.c.z + o.h.z) continue;
     return w;
   }
   return null;
 }
 
+/**
+ * Placement of one item under the pointer.
+ *
+ * Works in the item's FRAME (core/obb.ts): the world turned by φ = the item's
+ * angle mod 90. There the item is an axis-aligned box, and so is every other
+ * item sharing that frame (angle equal modulo 90°) — those are the only ones
+ * it magnetises to (flush faces / aligned edges, exactly like axis-aligned
+ * items always did). Items at other angles don't attract it; their faces
+ * still stop it (oriented-box collisions) and it can rest on top of them.
+ * Grid snap: the min corner of the oriented box, in the frame — the world
+ * grid for items at 0 / 90 / 180 / 270°, the grid turned with the item for
+ * the others (they move in grid steps along their own axes).
+ */
 export function computePlacement(o: PlaceOpts): PlaceResult | null {
   const vp = ui.viewport;
   const { clientX: cx, clientY: cy } = o;
@@ -228,29 +251,36 @@ export function computePlacement(o: PlaceOpts): PlaceResult | null {
   if (hit && hitItem && isWallHung(item) && isWallHung(hitItem) && Math.abs(hit.normal.z) < 0.5) {
     const w = wallBehind(hitItem, hit.normal, others);
     if (w) {
-      const ax = Math.abs(hit.normal.x) > 0.5 ? 'x' : 'y';
-      hit.point = { ...hit.point, [ax]: itemBox(w).min[ax] };
+      const wc = itemOBB(w).c, n = hit.normal;
+      const d = (hit.point.x - wc.x) * n.x + (hit.point.y - wc.y) * n.y;
+      hit.point = { x: hit.point.x - d * n.x, y: hit.point.y - d * n.y, z: hit.point.z };
       hitItem = w;
     }
   }
 
-  // wall-hung items over a wall face: back to the wall (turned if needed)
-  let turned: Rotation | undefined;
+  // wall-hung items and openings (window, door) over a wall face (any angle): back to
+  // the wall, i.e. turned like the wall (then they share its frame: magnets, holes)
+  let turned: number | undefined;
   let grabIn = o.grab;
-  if (hit && hitItem && hitItem.kind === 'block' && hitItem.shape === 'wall' && Math.abs(hit.normal.z) < 0.5 && isWallHung(item) && isUpright(item)) {
+  const orients = isWallHung(item) || (item.kind === 'block' && cutsWalls(item.shape));
+  if (hit && hitItem && hitItem.kind === 'block' && hitItem.shape === 'wall' && Math.abs(hit.normal.z) < 0.5 && orients && isUpright(item)) {
     const r = rotationFacing(hit.normal);
-    if (r !== item.rotation) {
+    if (Math.abs(angleDiff(r, item.rotation)) > 1e-6) {
       item = { ...item, rotation: r } as Item;
       turned = r;
       if (grabIn) { const s2 = worldSize(item); grabIn = { x: s2.w / 2, y: s2.d / 2, z: grabIn.z }; }
     }
   }
   const s = worldSize(item);
-  const size: Record<Axis, number> = { x: s.w, y: s.d, z: s.h };
+  const fs = frameSize(item);
+  const phi = frameAngle(item.rotation);
   const grab = grabIn ?? defaultGrab(item, s);
 
-  const pos: Vec3 = { x: 0, y: 0, z: 0 };
-  const locked: Record<Axis, boolean> = { x: false, y: false, z: true };
+  /** World centre of the footprint (x, y) and base height (z). */
+  const C: Vec3 = { x: 0, y: 0, z: 0 };
+  const locked: Record<Axis, boolean> = { x: false, y: false, z: true }; // frame axes
+  /** Against a face at another angle: no grid snap (it would pull the item off the face). */
+  let offFrameFace = false;
   const guides: SnapGuide[] = [];
   let surface: PlaceResult['surface'] = 'ground';
 
@@ -260,59 +290,72 @@ export function computePlacement(o: PlaceOpts): PlaceResult | null {
     const baseZ = floating ? o.keepHeight! : 0;
     const p = vp.rayToPlane(cx, cy, { x: 0, y: 0, z: 1 }, baseZ + grab.z) ?? hit?.point;
     if (!p) return null;
-    pos.x = p.x - grab.x; pos.y = p.y - grab.y; pos.z = baseZ;
+    C.x = p.x - grab.x + s.w / 2; C.y = p.y - grab.y + s.d / 2; C.z = baseZ;
     if (floating) surface = 'air';
   } else {
     const hb = itemBox(hitItem);
     if (hit.normal.z > 0.5) {
       surface = 'top';
       // hanging objects rest their pot base on the surface, the stems fall below it
-      pos.z = hb.max.z - (hangOf(item)?.hang ?? 0);
+      C.z = hb.max.z - (hangOf(item)?.hang ?? 0);
       const p = vp.rayToPlane(cx, cy, { x: 0, y: 0, z: 1 }, hb.max.z + grab.z) ?? hit.point;
-      pos.x = p.x - grab.x; pos.y = p.y - grab.y;
+      C.x = p.x - grab.x + s.w / 2; C.y = p.y - grab.y + s.d / 2;
       guides.push({ axis: 'z', kind: 'top', targetId: hitItem.id, value: hb.max.z });
     } else {
       surface = 'side';
-      pos.z = hb.min.z;
+      C.z = hb.min.z;
       locked.z = false;
       // against a wall: hang the item where the pointer is (height follows the cursor)
       if (hitItem.kind === 'block' && hitItem.shape === 'wall' && itemStandsOnFloor(item)) {
         // doors, skirtings, beds… stand on the floor at the foot of the wall (not "hung")
-        pos.z = hb.min.z;
+        C.z = hb.min.z;
         locked.z = true;
       } else if (hitItem.kind === 'block' && hitItem.shape === 'wall') {
         surface = 'wall';
         const gz = o.grab ? grab.z : s.h / 2;
         let z = hit.point.z - gz;
         if (settings.snapGrid && settings.gridCell > 0) z = Math.round(z / settings.gridCell) * settings.gridCell;
-        pos.z = Math.max(0, Math.min(z, hb.max.z - s.h > 0 ? hb.max.z - s.h : z));
+        C.z = Math.max(0, Math.min(z, hb.max.z - s.h > 0 ? hb.max.z - s.h : z));
       }
-      pos.x = hit.point.x - grab.x; pos.y = hit.point.y - grab.y;
-      if (Math.abs(hit.normal.x) > 0.5) {
-        pos.x = hit.normal.x > 0 ? hb.max.x : hb.min.x - s.w;
-        locked.x = true;
-        guides.push({ axis: 'x', kind: 'face', targetId: hitItem.id, value: hit.normal.x > 0 ? hb.max.x : hb.min.x });
-      } else {
-        pos.y = hit.normal.y > 0 ? hb.max.y : hb.min.y - s.d;
-        locked.y = true;
-        guides.push({ axis: 'y', kind: 'face', targetId: hitItem.id, value: hit.normal.y > 0 ? hb.max.y : hb.min.y });
-      }
+      // flush against the face (any angle): push the item out along the face normal
+      const n = { x: hit.normal.x, y: hit.normal.y, z: 0 };
+      const nl = Math.hypot(n.x, n.y) || 1;
+      n.x /= nl; n.y /= nl;
+      C.x = hit.point.x - grab.x + s.w / 2; C.y = hit.point.y - grab.y + s.d / 2;
+      const plane = dot2(hit.point, n);
+      const ax = frameAxes(phi);
+      const sup = fs.w / 2 * Math.abs(dot2(n, ax.ex)) + fs.d / 2 * Math.abs(dot2(n, ax.ey));
+      const shift = plane + sup - dot2(C, n);
+      C.x += shift * n.x; C.y += shift * n.y;
+      if (sameFrame(phi, hitItem.rotation)) {
+        const nf = toFrame(n, phi);
+        const a: Axis = Math.abs(nf.x) > 0.5 ? 'x' : 'y';
+        locked[a] = true;
+        const ho = obbFrameBox(itemOBB(hitItem), phi);
+        guides.push({ axis: a, kind: 'face', targetId: hitItem.id, value: (nf[a] > 0 ? ho.max : ho.min)[a] });
+      } else offFrameFace = true;
     }
   }
 
   // catalogue base height on the floor: window sill ("allège") 90, radiator 15…
   // default base height (window sill, radiator) only for NEW items; moved items keep theirs
-  if (item.kind === 'block' && surface === 'ground' && o.keepHeight === undefined) pos.z += itemBaseZ(item);
+  if (item.kind === 'block' && surface === 'ground' && o.keepHeight === undefined) C.z += itemBaseZ(item);
 
   // ── reach guard: near the horizon (perspective / grazing views) the pointer ray
   // meets the floor hundreds of metres away. Refuse such positions instead of
   // flinging the item out of sight — the gesture keeps its last valid spot.
-  if (!isReasonable(pos, size, others)) return null;
+  const size: Record<Axis, number> = { x: fs.w, y: fs.d, z: fs.h };
+  if (!isReasonable({ x: C.x - s.w / 2, y: C.y - s.d / 2, z: C.z }, { x: s.w, y: s.d, z: s.h }, others)) return null;
 
-  const raw: Vec3 = { ...pos };
+  // ── frame coordinates: min corner of the item's oriented box ──
+  const Cf = toFrame(C, phi);
+  const raw: Vec3 = { x: Cf.x - fs.w / 2, y: Cf.y - fs.d / 2, z: C.z };
+  const pos: Vec3 = { ...raw };
 
   // ── grid snap (free horizontal axes) ──
-  if (settings.snapGrid && settings.gridCell > 0) {
+  if (settings.snapGrid && settings.gridCell > 0 && !offFrameFace) {
+    // in the item's frame: a turned item moves in grid steps along its own axes
+    // (so sliding it along a turned wall never shifts it sideways)
     const g = settings.gridCell;
     for (const a of ['x', 'y'] as Axis[]) {
       if (locked[a]) continue;
@@ -321,10 +364,11 @@ export function computePlacement(o: PlaceOpts): PlaceResult | null {
     guides.push({ axis: 'x', kind: 'grid', value: g });
   }
 
-  // ── magnetic snap (wins over grid) ──
-  if (settings.snapItems && others.length) {
-    const thr = snapThreshold({ x: raw.x + grab.x, y: raw.y + grab.y, z: raw.z + grab.z });
-    const boxes = others.map(it => ({ id: it.id, b: itemBox(it) }));
+  // ── magnetic snap (wins over grid), with the items sharing the frame ──
+  const mates = others.filter(it => sameFrame(phi, it.rotation));
+  if (settings.snapItems && mates.length) {
+    const thr = snapThreshold({ x: C.x - s.w / 2 + grab.x, y: C.y - s.d / 2 + grab.y, z: raw.z + grab.z });
+    const boxes = mates.map(it => ({ id: it.id, b: obbFrameBox(itemOBB(it), phi) }));
     const hg = hangOf(item);
     for (const a of AXES) {
       if (locked[a]) continue;
@@ -361,13 +405,16 @@ export function computePlacement(o: PlaceOpts): PlaceResult | null {
     }
   }
 
-  // tidy floating point
-  for (const a of AXES) pos[a] = Math.round(pos[a] * 1000) / 1000;
-  if (pos.z < 0 && pos.z > -0.01) pos.z = 0;
+  // back to the world: min corner of the item's AABB; tidy floating point
+  const Cw = fromFrame({ x: pos.x + fs.w / 2, y: pos.y + fs.d / 2, z: pos.z }, phi);
+  const out: Vec3 = { x: Cw.x - s.w / 2, y: Cw.y - s.d / 2, z: pos.z };
+  if (!phi) { out.x = pos.x; out.y = pos.y; }
+  for (const a of AXES) out[a] = Math.round(out[a] * 1000) / 1000;
+  if (out.z < 0 && out.z > -0.01) out.z = 0;
 
-  const valid = itemsFree([{ item, pos }], o.ignoreIds);
+  const valid = itemsFree([{ item, pos: out }], o.ignoreIds);
   return {
-    position: pos, valid, surface, guides,
+    position: out, valid, surface, guides,
     label: describeGuides(guides, surface, hitItem?.id ?? null),
     ...(turned !== undefined ? { rotation: turned, grab: grabIn } : {}),
   };

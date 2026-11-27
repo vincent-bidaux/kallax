@@ -1,17 +1,18 @@
 // Openings (doors / windows) cut through walls.
 //
 // A wall is a zero-thickness plane: local XZ plane at y = 0, size w × h,
-// oriented by the item's rotation / tilt. Its world normal is therefore one of
-// the world axes, and its plane sits at the wall's position along that axis.
-// Any visible item whose shape cuts walls (core/objects.ts → cutsWalls) and
-// whose world AABB straddles or touches that plane (±TOL, a window is often
-// placed flush against the wall face) is projected onto the wall's local
-// (x, z): that rectangle, clipped to the wall, becomes a hole. Overlapping
-// holes are merged (bounding rectangle).
+// oriented by the item's rotation (any angle about Z) / tilt. Any visible
+// item whose shape cuts walls (core/objects.ts → cutsWalls), whose angle
+// equals the wall's modulo 90° (same frame, core/obb.ts — a window turned
+// with its wall) and whose oriented box straddles or touches the wall plane
+// (±TOL, a window is often placed flush against the wall face) is projected
+// onto the wall's local (x, z): that rectangle, clipped to the wall, becomes
+// a hole. Overlapping holes are merged (bounding rectangle).
 import type { BlockItem, Item } from '../core/types';
-import { itemBox, localSize, worldSize } from '../core/kallax';
-import { itemMatrix } from '../core/orient';
+import { localSize } from '../core/kallax';
+import { itemMatrix, sameFrame } from '../core/orient';
 import { cutsWalls } from '../core/objects';
+import { frameAxes, itemOBB } from '../core/obb';
 import type { WallHole } from './item-geometry';
 
 const TOL = 0.5;      // cm: plane-contact tolerance
@@ -26,30 +27,35 @@ export function isOpening(it: Item): it is BlockItem {
 export function wallHoles(wall: BlockItem, openings: BlockItem[]): WallHole[] {
   if (!openings.length) return [];
   const m = itemMatrix(wall); // row-major, local → world
-  const ls = localSize(wall), ws = worldSize(wall), p = wall.position;
-  const c = [p.x + ws.w / 2, p.y + ws.d / 2, p.z + ws.h / 2];
+  const ls = localSize(wall);
+  const wo = itemOBB(wall);
+  const c = [wo.c.x, wo.c.y, wo.c.z];
   const half = [ls.w / 2, ls.d / 2, ls.h / 2];
-  // world axis of the wall normal (local +Y = column 1)
-  const k = Math.abs(m[1]) ? 0 : Math.abs(m[4]) ? 1 : 2;
-  const plane = c[k];
-  const wb = itemBox(wall);
-  const wmin = [wb.min.x, wb.min.y, wb.min.z], wmax = [wb.max.x, wb.max.y, wb.max.z];
+  // wall normal (local +Y = column 1) and plane
+  const n = [m[1], m[4], m[7]];
+  const plane = n[0] * c[0] + n[1] * c[1] + n[2] * c[2];
   const holes: WallHole[] = [];
   for (const o of openings) {
-    if (o.id === wall.id) continue;
-    const b = itemBox(o);
-    const bmin = [b.min.x, b.min.y, b.min.z], bmax = [b.max.x, b.max.y, b.max.z];
-    if (bmin[k] - TOL > plane || bmax[k] + TOL < plane) continue;
-    // quick reject in the wall plane
-    let apart = false;
-    for (let i = 0; i < 3; i++) if (i !== k && (bmin[i] >= wmax[i] || bmax[i] <= wmin[i])) apart = true;
-    if (apart) continue;
+    if (o.id === wall.id || !sameFrame(o.rotation, wall.rotation)) continue;
+    const ob = itemOBB(o);
+    const { ex, ey } = frameAxes(ob.a);
+    // the 8 corners of the opening's oriented box
+    const corners: number[][] = [];
+    for (let k = 0; k < 8; k++) {
+      const sx = k & 1 ? 1 : -1, sy = k & 2 ? 1 : -1, sz = k & 4 ? 1 : -1;
+      corners.push([
+        ob.c.x + ex.x * ob.h.x * sx + ey.x * ob.h.y * sy,
+        ob.c.y + ex.y * ob.h.x * sx + ey.y * ob.h.y * sy,
+        ob.c.z + ob.h.z * sz,
+      ]);
+    }
+    // straddles / touches the wall plane?
+    const ds = corners.map(p => n[0] * p[0] + n[1] * p[1] + n[2] * p[2] - plane);
+    if (Math.min(...ds) - TOL > 0 || Math.max(...ds) + TOL < 0) continue;
     // world → local: l = Rᵀ (w − c) + half
     let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
-    for (let n = 0; n < 8; n++) {
-      const wx = (n & 1 ? bmax[0] : bmin[0]) - c[0];
-      const wy = (n & 2 ? bmax[1] : bmin[1]) - c[1];
-      const wz = (n & 4 ? bmax[2] : bmin[2]) - c[2];
+    for (const p of corners) {
+      const wx = p[0] - c[0], wy = p[1] - c[1], wz = p[2] - c[2];
       const lx = m[0] * wx + m[3] * wy + m[6] * wz + half[0];
       const lz = m[2] * wx + m[5] * wy + m[8] * wz + half[2];
       x0 = Math.min(x0, lx); x1 = Math.max(x1, lx);

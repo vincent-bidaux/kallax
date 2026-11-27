@@ -5,22 +5,30 @@
 //   X → right (width)   Y → back (depth)   Z → up (height)
 // Origin (0,0,0) is the grid origin, drawn with an axis gizmo.
 // An item's `position` is the MIN corner of its world AABB
-// (left / front / bottom corner).
+// (left / front / bottom corner). Items may be turned by any angle about
+// Z: the AABB is then the bounding box of the turned item, and its centre
+// (position + worldSize / 2) is the item's centre — the pivot of every
+// rotation about Z (rotating in place keeps the centre fixed).
+// Geometry that matters (picking, collisions, snapping) uses the oriented
+// box (core/obb.ts); the AABB remains for overall dimensions, framing…
 // ─────────────────────────────────────────────────────────────
 
 export interface Vec3 { x: number; y: number; z: number }
 export interface Size3 { w: number; d: number; h: number } // along X, Y, Z (world, after rotation)
 
-/** Rotation about the vertical Z axis, degrees, counter-clockwise seen from above. */
+/** A quarter-turn angle (degrees): tilt steps about X / Y. */
 export type Rotation = 0 | 90 | 180 | 270;
 
 interface ItemBase {
   id: string;
   name: string;
   position: Vec3;
-  /** Rotation about Z (vertical). */
-  rotation: Rotation;
-  /** Extra 90° steps about X and Y (see core/orient.ts). Absent = upright. */
+  /**
+   * Rotation about Z (vertical), degrees, counter-clockwise seen from above,
+   * any angle in [0, 360) (older documents: 0 / 90 / 180 / 270).
+   */
+  rotation: number;
+  /** Extra 90° steps about X and Y of the item's frame (see core/orient.ts). Absent = upright. */
   tilt?: { x: Rotation; y: Rotation };
   layerId: string;
   /** Group membership (see core/groups.ts). Items sharing a groupId select, move and duplicate together. */
@@ -169,6 +177,12 @@ export interface Settings {
   showAxes: boolean;
   /** Fill KALLAX faces with their finish colour (wood, white, black-brown…). */
   finishColors: boolean;
+  /**
+   * Free rotation about Z (padlock open): the canvas rotation handle turns by
+   * any angle (magnetised to 45° ticks and to other items' angles). Closed:
+   * the handle snaps to 45° steps.
+   */
+  rotationFree: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -187,4 +201,5 @@ export const DEFAULT_SETTINGS: Settings = {
   showGrid: true,
   showAxes: true,
   finishColors: false,
+  rotationFree: false,
 };

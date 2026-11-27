@@ -14,12 +14,14 @@ class UIState {
   cursor: Vec3 | null = null;
   /** Human-readable description of the last snap ("Accolé à Kallax 2×4 (X)"), null when none. */
   snap: string | null = null;
-  /** Current gesture: none / placing from library / moving items. */
-  gesture: 'none' | 'place' | 'move' = 'none';
+  /** Current gesture: none / placing from library / moving items / turning them with the rotation handle. */
+  gesture: 'none' | 'place' | 'move' | 'rotate' = 'none';
   /** Placement validity during a gesture. */
   gestureValid = true;
   /** Active "habillage" tool: click a Kallax cell to fit it. */
   insertTool: InsertTool | null = null;
+  /** Angle eyedropper armed: the next click on an item copies its Z angle to the selection. */
+  eyedropper = false;
   /** Hovered cell label while a tool is active. */
   toolHint: string | null = null;
   private ls = new Set<(e: UIEvent) => void>();
@@ -28,6 +30,7 @@ class UIState {
   emit(e: UIEvent) { for (const l of this.ls) l(e); }
 
   setInsertTool(t: InsertTool | null) { if (t !== this.insertTool) { this.insertTool = t; this.toolHint = null; this.emit('tool'); } }
+  setEyedropper(on: boolean) { if (on !== this.eyedropper) { this.eyedropper = on; this.emit('tool'); } }
   setToolHint(h: string | null) { if (h !== this.toolHint) { this.toolHint = h; this.emit('tool'); } }
   setCursor(p: Vec3 | null) { this.cursor = p; this.emit('cursor'); }
   setSnap(s: string | null) { if (s !== this.snap) { this.snap = s; this.emit('snap'); } }

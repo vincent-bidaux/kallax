@@ -21,6 +21,8 @@ const GROUPS: [string, [string, string[]][]][] = [
   [t('sc.objects'), [
     [t('sc.rotCw'), ['R']],
     [t('sc.rotCcw'), [`${SHIFT}R`]],
+    [t('sc.rotHandle'), [t('key.drag')]],
+    [t('sc.rotPick'), [t('key.esc')]],
     [t('sc.tilt'), ['X', 'Y']],
     [t('sc.nudge'), ['←', '↑', '→', '↓']],
     [t('sc.nudge10'), [SHIFT, '←↑→↓']],

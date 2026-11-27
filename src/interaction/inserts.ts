@@ -3,7 +3,8 @@
 import type { ViewportAPI } from '../core/contracts';
 import type { BlockItem, KallaxItem, Vec3 } from '../core/types';
 import { store } from '../core/store';
-import { INSERTS, KALLAX, itemBox, localSize, worldSize } from '../core/kallax';
+import { INSERTS, KALLAX, localSize, worldSize } from '../core/kallax';
+import { itemOBB, rayOBB } from '../core/obb';
 import { itemMatrix } from '../core/orient';
 import { kallaxCellRects } from './cells';
 import { ui } from './context';
@@ -32,18 +33,10 @@ function toWorld(it: KallaxItem, l: Vec3): Vec3 {
   };
 }
 
-/** Slab test against the item's world AABB. */
+/** Entry / exit distances of the ray through the unit's oriented box. */
 function rayBox(o: Vec3, d: Vec3, it: KallaxItem): [number, number] | null {
-  const b = itemBox(it);
-  let t0 = 0, t1 = Infinity;
-  for (const a of ['x', 'y', 'z'] as const) {
-    if (Math.abs(d[a]) < 1e-12) { if (o[a] < b.min[a] || o[a] > b.max[a]) return null; continue; }
-    let ta = (b.min[a] - o[a]) / d[a], tb = (b.max[a] - o[a]) / d[a];
-    if (ta > tb) [ta, tb] = [tb, ta];
-    t0 = Math.max(t0, ta); t1 = Math.min(t1, tb);
-    if (t0 > t1) return null;
-  }
-  return [t0, t1];
+  const h = rayOBB(o, d, itemOBB(it));
+  return h ? [Math.max(0, h.t0), h.t1] : null;
 }
 
 /** Cell under the pointer: walk the ray through the unit until it is inside a cell opening. */
@@ -76,15 +69,17 @@ export function cellUnderPointer(vp: ViewportAPI, x: number, y: number): CellHit
   return best?.hit ?? null;
 }
 
-/** World AABB of one cell (for the hover preview). */
+/** One cell as a box turned like its unit (for the hover preview). */
 function cellBox(h: CellHit): BlockItem {
   const L = h.item.legs ? KALLAX.legs : 0;
   const rc = kallaxCellRects(h.item.cols, h.item.rows).find(r => r.c === h.c && r.r === h.r)!;
-  const corners: Vec3[] = [];
-  for (const lx of [rc.x0, rc.x1]) for (const ly of [0, KALLAX.depth]) for (const lz of [rc.z0 + L, rc.z1 + L]) corners.push(toWorld(h.item, { x: lx, y: ly, z: lz }));
-  const min = { x: Math.min(...corners.map(p => p.x)), y: Math.min(...corners.map(p => p.y)), z: Math.min(...corners.map(p => p.z)) };
-  const max = { x: Math.max(...corners.map(p => p.x)), y: Math.max(...corners.map(p => p.y)), z: Math.max(...corners.map(p => p.z)) };
-  return { id: '__cell', kind: 'block', name: '', size: { w: max.x - min.x, d: max.y - min.y, h: max.z - min.z }, position: min, rotation: 0, layerId: '' };
+  const size = { w: rc.x1 - rc.x0, d: KALLAX.depth, h: rc.z1 - rc.z0 };
+  const c = toWorld(h.item, { x: (rc.x0 + rc.x1) / 2, y: KALLAX.depth / 2, z: (rc.z0 + rc.z1) / 2 + L });
+  const cell: BlockItem = { id: '__cell', kind: 'block', name: '', size, position: { x: 0, y: 0, z: 0 }, rotation: h.item.rotation, layerId: '' };
+  if (h.item.tilt) cell.tilt = { ...h.item.tilt };
+  const ws = worldSize(cell);
+  cell.position = { x: c.x - ws.w / 2, y: c.y - ws.d / 2, z: c.z - ws.h / 2 };
+  return cell;
 }
 
 export function installInsertTool(vp: ViewportAPI) {

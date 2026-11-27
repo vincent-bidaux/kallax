@@ -35,7 +35,7 @@ Langue de l'interface : **français**. Unités : **cm partout**.
 
 - Monde **Z-up** : X droite (largeur), Y vers le fond (profondeur), Z haut. `camera.up = (0,0,1)`.
 - `item.position` = coin **min** (gauche, avant, bas) de la boîte englobante monde.
-- Rotation autour de Z (0/90/180/270). À 0°, l'ouverture avant regarde −Y (vers l'utilisateur en vue de face).
+- Rotation autour de Z : n'importe quel angle dans [0, 360) (anciens documents : 0/90/180/270, inchangés). À 0°, l'ouverture avant regarde −Y (vers l'utilisateur en vue de face). `position` reste le coin min de la boîte englobante (AABB) monde ; son centre est le centre de l'objet et le pivot des rotations sur place. Géométrie fine (sélection, collisions, aimantation, cotes, ouvertures) sur la boîte orientée (core/obb.ts).
 - Kallax : ouvert devant **et** derrière (pas de fond).
 - Grille au sol z = 0. Pas de grille par défaut 5 cm (mineur), majeur tous les 50 cm, 1 m accentué.
 - Vue de face = caméra en −Y regardant +Y. Iso = depuis (+1, −1, +1) (avant-droite-haut).

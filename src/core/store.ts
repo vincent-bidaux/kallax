@@ -9,6 +9,16 @@ import type { DesignDoc, Item, Layer, Settings } from './types';
 import { DEFAULT_SETTINGS } from './types';
 import { t, onBeforeLangSwitch } from './i18n';
 import { expandToGroups, normalizeGroups } from './groups';
+import { normAngle } from './orient';
+
+/** Angles about Z of incoming documents: any number → [0, 360) (missing / invalid → 0). Old docs (0/90/180/270) are unchanged. */
+function sanitizeAngles(d: DesignDoc): DesignDoc {
+  for (const i of d.items) {
+    const r = normAngle(Number(i.rotation) || 0);
+    if (i.rotation !== r) i.rotation = r;
+  }
+  return d;
+}
 
 export type StoreEvent = 'doc' | 'selection' | 'settings' | 'hover';
 type Listener = (ev: StoreEvent) => void;
@@ -180,7 +190,7 @@ class Store {
     if (JSON.stringify(this.doc) !== before) this.emit('doc');
   }
   loadDoc(doc: DesignDoc) {
-    const incoming = clone(doc);
+    const incoming = sanitizeAngles(clone(doc));
     try { this.importFilter?.(incoming); } catch (e) { console.error(e); }
     this.update(d => { for (const k of Object.keys(d)) delete (d as unknown as Record<string, unknown>)[k]; Object.assign(d, incoming); });
     this.enteredGroup = null;
@@ -244,7 +254,7 @@ class Store {
       if (!raw) return null;
       const d = JSON.parse(raw) as DesignDoc;
       if (d?.version !== 1 || !Array.isArray(d.items) || !Array.isArray(d.layers) || !d.layers.length) return null;
-      return rescueStrays(d);
+      return rescueStrays(sanitizeAngles(d));
     } catch { return null; }
   }
   private loadSettings(): Partial<Settings> {

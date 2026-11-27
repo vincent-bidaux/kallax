@@ -1165,6 +1165,18 @@ body.moving .viewport canvas { cursor: grabbing !important; }
 .fields-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
 .rot-rows { display: grid; gap: 6px; }
 .rot-row.rot-axis { grid-template-columns: 22px 36px 1fr 36px; }
+.rot-row.rot-z { grid-template-columns: 22px 32px minmax(0, 1fr) 32px 28px 28px; }
+.rot-row.rot-z .btn { width: 32px; }
+.rot-row.rot-z .rot-lock, .rot-row.rot-z .rot-pick { width: 28px; color: var(--text-2); }
+.rot-row.rot-z .rot-lock.on { color: var(--accent-text); }
+body.eyedropper-on .rot-row.rot-z .rot-pick { color: #fff; background: var(--accent); }
+.rot-num { gap: 0; }
+.rot-num .field-label { display: none; }
+.rot-num .num-box { height: 24px; }
+.rot-num .num-box { padding-right: 0; }
+.rot-num .num-input { flex: 1 1 50%; text-align: right; padding: 0; font-weight: 600; }
+.rot-num .num-suffix { flex: 1 1 50%; margin-left: 1px; font-size: 13px; font-weight: 600; color: var(--text-2); }
+body.eyedropper-on .viewport canvas { cursor: crosshair; }
 .rot-ax {
   font: 700 11px/1 var(--font-display); text-align: center;
 }

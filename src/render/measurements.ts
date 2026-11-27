@@ -1,8 +1,11 @@
 // ─────────────────────────────────────────────────────────────
 // Automatic architectural dimensioning ("cotes").
 //
-//  • per item: width (X) / depth (Y) / height (Z) of its world AABB
-//  • global: overall W × D × H of the composition, on an outer tier
+//  • per item: width (X) / depth (Y) / height (Z) of its world AABB — for
+//    an item turned by a free angle, along its own axes (its oriented box,
+//    core/obb.ts): the same construction is done in the item's frame and
+//    turned back, so the dimension lines run along its faces
+//  • global: overall W × D × H of the composition (world AABB), on an outer tier
 //
 // Geometry = fat lines in viewport.overlay (dimension line, extension
 // lines with a gap + overshoot, 45° architect ticks). Everything lies
@@ -18,6 +21,8 @@ import type { ViewportAPI } from '../core/contracts';
 import type { ThemeTokens } from '../core/theme';
 import type { Item } from '../core/types';
 import { fmtCm, itemBox, unionBox, type Box3 } from '../core/kallax';
+import { frameAngle } from '../core/orient';
+import { itemOBB, obbFrameBox, toFrame } from '../core/obb';
 import { store, type StoreEvent } from '../core/store';
 import { LineSegments2, LineMaterial, makeLineMaterial, disposeLineMaterial } from './lines';
 import { applyMeasureTheme, ensureMeasureStyle } from './measure-style';
@@ -106,6 +111,8 @@ export class Measurements {
   private theme: ThemeTokens;
   private layout: Layout | null = null;
   private layoutKey = '';
+  /** Layouts of the frames of turned items, keyed by frame angle (toFixed(3)). */
+  private frameLayouts = new Map<string, Layout>();
   private dirty = true;
   private lastBuild = 0;
   private throttleTimer = 0;
@@ -201,9 +208,19 @@ export class Measurements {
     const ub = items.length ? unionBox(items) : null;
     if (ub) {
       const L = this.computeLayout(ub, this.layout);
-      const key = layoutKey(L);
+      let key = layoutKey(L);
+      // turned items: one layout per frame angle
+      const fl = new Map<string, Layout>();
+      if (store.settings.measureItems) {
+        for (const [k, { phi, box }] of frameUnions(items)) {
+          const F = this.computeLayout(box, this.frameLayouts.get(k) ?? null, phi);
+          fl.set(k, F);
+          key += `|${k}:${layoutKey(F)}`;
+        }
+      }
       if (key !== this.layoutKey) {
         const first = !this.layout;
+        this.frameLayouts = fl;
         this.layout = L;
         this.layoutKey = key;
         this.dirty = true;
@@ -240,20 +257,22 @@ export class Measurements {
     return Number.isFinite(r) ? r : 0;
   }
 
-  private computeLayout(b: Box3, prev: Layout | null): Layout {
+  /** Layout of a box given in the frame turned by `phi` degrees (0 = world). */
+  private computeLayout(b: Box3, prev: Layout | null, phi = 0): Layout {
     const cx = (b.min.x + b.max.x) / 2, cy = (b.min.y + b.max.y) / 2, cz = (b.min.z + b.max.z) / 2;
     const ext = Math.max(b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z, 10);
     const T = ext * 0.25;
-    const X = v3(T, 0, 0), Y = v3(0, T, 0), Z = v3(0, 0, T);
+    const r = (v: V3) => (phi ? rotZ(v, phi) : v);
+    const X = r(v3(T, 0, 0)), Y = r(v3(0, T, 0)), Z = v3(0, 0, T);
 
-    const fFront = this.facing(v3(cx, b.min.y, cz), X, Z);
-    const fBack = this.facing(v3(cx, b.max.y, cz), Z, X);
-    const fRight = this.facing(v3(b.max.x, cy, cz), Y, Z);
-    const fLeft = this.facing(v3(b.min.x, cy, cz), Z, Y);
-    const fTop = this.facing(v3(cx, cy, b.max.z), X, Y);
-    const fBot = this.facing(v3(cx, cy, b.min.z), Y, X);
+    const fFront = this.facing(r(v3(cx, b.min.y, cz)), X, Z);
+    const fBack = this.facing(r(v3(cx, b.max.y, cz)), Z, X);
+    const fRight = this.facing(r(v3(b.max.x, cy, cz)), Y, Z);
+    const fLeft = this.facing(r(v3(b.min.x, cy, cz)), Z, Y);
+    const fTop = this.facing(r(v3(cx, cy, b.max.z)), X, Y);
+    const fBot = this.facing(r(v3(cx, cy, b.min.z)), Y, X);
 
-    const d = this.vp.getViewDirection();
+    const d = phi ? toFrame(this.vp.getViewDirection(), phi) : this.vp.getViewDirection();
     const tiny = 1e-3 * T * T;
     const pick = (pos: number, neg: number, prevS: Sign | undefined, fallback: Sign): Sign => {
       if (Math.abs(pos - neg) < tiny) return prevS ?? fallback;
@@ -284,8 +303,8 @@ export class Measurements {
     return { fx, fy, fz, w, d: dd, h };
   }
 
-  private fallbackLayout(): Layout {
-    const d = this.vp.getViewDirection();
+  private fallbackLayout(phi = 0): Layout {
+    const d = phi ? toFrame(this.vp.getViewDirection(), phi) : this.vp.getViewDirection();
     const az = Math.abs(d.z), ay = Math.abs(d.y), ax = Math.abs(d.x);
     return {
       fx: d.x > 0 ? -1 : 1,
@@ -407,7 +426,10 @@ export class Measurements {
   private geomScale = 1;
 
   /** Per-item dimensions with de-duplication and obstacle avoidance. */
-  private itemDims(items: Item[], ub: Box3, L: Layout, off: number, showGlobal: boolean, dims: DimSpec[], names: NameSpec[]) {
+  private itemDims(all: Item[], ub: Box3, L: Layout, off: number, showGlobal: boolean, dims: DimSpec[], names: NameSpec[]) {
+    // turned items are measured in their own frame (below)
+    const items = all.filter(it => !frameAngle(it.rotation));
+    this.turnedDims(all.filter(it => frameAngle(it.rotation)), off, dims, names);
     const boxes = items.map(it => ({ it, b: itemBox(it) }));
     const { fx, fy, fz } = L;
 
@@ -448,6 +470,34 @@ export class Measurements {
         });
       }
     });
+  }
+
+  /**
+   * Items turned by a free angle: W / D / H along their own axes. The usual
+   * construction runs in the item's frame (its oriented box is axis-aligned
+   * there, with a layout computed for that frame), then every point and
+   * offset direction is turned back into the world.
+   */
+  private turnedDims(items: Item[], off: number, dims: DimSpec[], names: NameSpec[]) {
+    if (!items.length) return;
+    const fbs = items.map(it => { const phi = frameAngle(it.rotation); return { it, phi, k: phi.toFixed(3), b: obbFrameBox(itemOBB(it), phi) }; });
+    for (const { it, phi, k, b } of fbs) {
+      const L = this.frameLayouts.get(k) ?? this.computeLayout(b, null, phi);
+      const obstacles = fbs.filter(o => o.it !== it && o.k === k).map(o => o.b);
+      const local: DimSpec[] = [];
+      this.boxDims(it.id, 'item', it.id, b, L, off, local, [true, true, true], obstacles);
+      for (const d of local) { d.pa = rotZ(d.pa, phi); d.pb = rotZ(d.pb, phi); d.o = rotZ(d.o, phi); dims.push(d); }
+      if (it.kind === 'block' && it.name?.trim()) {
+        const yF = L.fy < 0 ? b.min.y : b.max.y;
+        const cx = (b.min.x + b.max.x) / 2, cz = (b.min.z + b.max.z) / 2;
+        names.push({
+          key: `${it.id}:name`, itemId: it.id, text: it.name.trim(),
+          pos: rotZ(v3(cx, yF, cz), phi),
+          wa: rotZ(v3(b.min.x, yF, cz), phi), wb: rotZ(v3(b.max.x, yF, cz), phi),
+          ha: rotZ(v3(cx, yF, b.min.z), phi), hb: rotZ(v3(cx, yF, b.max.z), phi),
+        });
+      }
+    }
   }
 
   /**
@@ -744,6 +794,27 @@ function obbOverlap(a: LabelRec, b: LabelRec, pad: number): boolean {
     if (Math.abs(dx * ax + dy * ay) > ra2 + rb2) return false;
   }
   return true;
+}
+
+/** Turn a point / direction by `phi` degrees about the world Z axis (frame → world). */
+function rotZ(v: V3, phi: number): V3 {
+  const a = (phi * Math.PI) / 180, c = Math.cos(a), s = Math.sin(a);
+  return v3(v.x * c - v.y * s, v.x * s + v.y * c, v.z);
+}
+
+/** Turned items grouped by frame angle, with the union of their boxes in that frame. */
+function frameUnions(items: Item[]): Map<string, { phi: number; box: Box3 }> {
+  const out = new Map<string, { phi: number; box: Box3 }>();
+  for (const it of items) {
+    const phi = frameAngle(it.rotation);
+    if (!phi) continue;
+    const k = phi.toFixed(3);
+    const b = obbFrameBox(itemOBB(it), phi);
+    const u = out.get(k);
+    if (!u) { out.set(k, { phi, box: { min: { ...b.min }, max: { ...b.max } } }); continue; }
+    for (const a of ['x', 'y', 'z'] as const) { u.box.min[a] = Math.min(u.box.min[a], b.min[a]); u.box.max[a] = Math.max(u.box.max[a], b.max[a]); }
+  }
+  return out;
 }
 
 function layoutKey(L: Layout): string {

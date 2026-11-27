@@ -1,7 +1,7 @@
 // Layers panel + outliner.
 import { store, uid } from '../core/store';
 import type { Item, Layer } from '../core/types';
-import { fmtCm, worldSize } from '../core/kallax';
+import { fmtCm, frameSize } from '../core/kallax';
 import { h, clear, toast } from './dom';
 import { icon } from './icons';
 import { itemIcon } from './inspector';
@@ -16,7 +16,7 @@ const expandedGroups = new Set<string>();
 let initialised = false;
 
 function itemDims(it: Item) {
-  const s = worldSize(it);
+  const s = frameSize(it);
   return `${fmtCm(s.w)}×${fmtCm(s.d)}×${fmtCm(s.h)}`;
 }
 

@@ -15,6 +15,7 @@ import { store, type StoreEvent } from '../core/store';
 import { THEMES, type ThemeTokens } from '../core/theme';
 import type { Projection, Settings, Vec3, ViewPreset } from '../core/types';
 import { unionBox } from '../core/kallax';
+import { rayOBB } from '../core/obb';
 import { setLineResolution, makeLines, disposeObject } from './lines';
 import { fullGroups } from '../core/groups';
 import { ShearOrthoCamera } from './shear-camera';
@@ -294,14 +295,15 @@ export class Viewport implements ViewportAPI {
     const ray = this.rayAt(clientX, clientY);
     let best: string | null = null, bestT = Infinity;
     for (const v of this.views.values()) {
-      const p = ray.intersectBox(v.box, _v3);
-      if (!p) continue;
-      const t = p.distanceTo(ray.origin);
+      const h = rayOBB(ray.origin, ray.direction, v.obb);
+      if (!h) continue;
+      const t = Math.max(0, h.t0);
       if (t < bestT) { bestT = t; best = v.item.id; }
     }
     return best;
   }
 
+  /** First item surface under the pointer (oriented boxes: faces of turned items have turned normals), else the floor. */
   raycastSurface(clientX: number, clientY: number, ignoreIds?: string[]): SurfaceHit | null {
     const ray = this.rayAt(clientX, clientY);
     const ignore = new Set(ignoreIds ?? []);
@@ -310,11 +312,14 @@ export class Viewport implements ViewportAPI {
     const p = new THREE.Vector3();
     for (const v of this.views.values()) {
       if (ignore.has(v.item.id)) continue;
-      if (!ray.intersectBox(v.box, p)) continue;
-      const t = p.distanceTo(ray.origin);
+      const h = rayOBB(ray.origin, ray.direction, v.obb);
+      if (!h) continue;
+      const inside = h.t0 < 0;
+      const t = inside ? h.t1 : h.t0;
       if (t >= bestT) continue;
       bestT = t;
-      hit = { point: { x: p.x, y: p.y, z: p.z }, normal: boxFaceNormal(v.box, p, ray.direction), itemId: v.item.id };
+      ray.at(t, p);
+      hit = { point: { x: p.x, y: p.y, z: p.z }, normal: inside ? h.n1 : h.n0, itemId: v.item.id };
     }
     // ground plane z = 0 (seen from above)
     if (ray.direction.z < -1e-9) {
@@ -1015,24 +1020,4 @@ export class Viewport implements ViewportAPI {
     sc.updateProjectionMatrix();
     this.renderer.shadowMap.needsUpdate = true;
   }
-}
-
-/** Axis-aligned outward normal of the box face containing p (the face the ray entered). */
-function boxFaceNormal(b: THREE.Box3, p: THREE.Vector3, rayDir: THREE.Vector3): Vec3 {
-  const cand: [number, Vec3][] = [
-    [Math.abs(p.x - b.min.x), { x: -1, y: 0, z: 0 }],
-    [Math.abs(p.x - b.max.x), { x: 1, y: 0, z: 0 }],
-    [Math.abs(p.y - b.min.y), { x: 0, y: -1, z: 0 }],
-    [Math.abs(p.y - b.max.y), { x: 0, y: 1, z: 0 }],
-    [Math.abs(p.z - b.min.z), { x: 0, y: 0, z: -1 }],
-    [Math.abs(p.z - b.max.z), { x: 0, y: 0, z: 1 }],
-  ];
-  let best = cand[0];
-  for (const c of cand) {
-    // prefer faces facing the ray when distances tie (edges / corners)
-    const facing = c[1].x * rayDir.x + c[1].y * rayDir.y + c[1].z * rayDir.z < 0;
-    const bestFacing = best[1].x * rayDir.x + best[1].y * rayDir.y + best[1].z * rayDir.z < 0;
-    if (c[0] < best[0] - 1e-4 || (Math.abs(c[0] - best[0]) <= 1e-4 && facing && !bestFacing)) best = c;
-  }
-  return best[1];
 }

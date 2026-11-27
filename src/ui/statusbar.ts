@@ -55,6 +55,8 @@ export function buildStatusbar(host: HTMLElement) {
     hint.classList.toggle('bad', ui.gesture !== 'none' && !ui.gestureValid);
     if (ui.gesture === 'place') hint.textContent = ui.gestureValid ? t('sb.hintDrop') : t('sb.hintDropBad');
     else if (ui.gesture === 'move') hint.textContent = ui.gestureValid ? t('sb.hintMove') : t('sb.hintMoveBad');
+    else if (ui.gesture === 'rotate') hint.textContent = t('sb.hintRotate');
+    else if (ui.eyedropper) hint.textContent = t('rot.pickHint');
     else if (ui.insertTool) hint.textContent = ui.toolHint ?? t('sb.hintInsert');
     else if (store.selection.length) hint.textContent = t('sb.hintSelection', { mod: MOD });
     else hint.textContent = t('sb.hintIdle');

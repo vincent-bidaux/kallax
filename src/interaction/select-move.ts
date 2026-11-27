@@ -2,7 +2,7 @@
 // Listeners run in the CAPTURE phase on the viewport container so they
 // fire before OrbitControls (which then never sees a press on an item).
 import type { ViewportAPI } from '../core/contracts';
-import type { Item, Rotation, Vec3 } from '../core/types';
+import type { Item, Vec3 } from '../core/types';
 import { store } from '../core/store';
 import { ui } from './context';
 import { computePlacement, itemsFree } from './placement';
@@ -94,7 +94,7 @@ export function installSelectMove(vp: ViewportAPI) {
     const res = computePlacement({ item: g.primary, clientX: ev.clientX, clientY: ev.clientY, ignoreIds: g.ids, grab: g.grab, keepHeight: g.orig.get(g.primary.id)?.z ?? g.primary.position.z });
     if (!res) return;
     // wall-hung item (frame, wall TV) moved onto another wall face: turned back to the wall
-    let turn: Rotation | undefined;
+    let turn: number | undefined;
     if (res.rotation !== undefined && g.ids.length === 1) {
       turn = res.rotation;
       g.primary = { ...g.primary, rotation: res.rotation } as Item;
@@ -242,7 +242,8 @@ export function installSelectMove(vp: ViewportAPI) {
       const id = vp.pickItem(ev.clientX, ev.clientY);
       store.setHover(id);
       const it = id ? store.getItem(id) : null;
-      setCursor(it ? (store.isLocked(it) ? 'pointer' : 'grab') : '');
+      if (ui.eyedropper) setCursor(it && !store.selection.includes(it.id) ? 'copy' : 'crosshair');
+      else setCursor(it ? (store.isLocked(it) ? 'pointer' : 'grab') : '');
     });
   });
   el.addEventListener('pointerleave', () => {

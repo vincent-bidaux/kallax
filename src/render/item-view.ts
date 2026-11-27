@@ -1,6 +1,6 @@
 // Scene representation of one item (Kallax frame or custom block).
 //
-//   group   (pivot at the bottom centre of the world AABB, rotated about Z)
+//   group   (pivot at the centre of the world AABB = the item's centre; R = Rz·Ry·Rx, any angle about Z)
 //   └ content (offset by −local size / 2 so local [0,w]×[0,d]×[0,h] is centred)
 //       ├ face     solid faces (hidden-line removal / lighting / shadows) — pickable
 //       ├ prepass  depth-only copy of the faces (transparency mode)
@@ -14,6 +14,7 @@ import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeome
 import { acquireGeometry, geometryKey, releaseGeometry, type ItemGeometry, type WallHole } from './item-geometry';
 import { MaterialLibrary, RO, faceSetOf, type VisualState } from './materials';
 import { itemBox, localSize, worldSize } from '../core/kallax';
+import { itemOBB, type OBB } from '../core/obb';
 import { effectiveFinish, kallaxLegsColor } from '../core/finishes';
 import { EKET_LEG_BY_ID, effectiveEketColor } from '../core/eket';
 import { store } from '../core/store';
@@ -24,7 +25,10 @@ import type { Item } from '../core/types';
 export class ItemView {
   readonly group = new THREE.Group();
   readonly content = new THREE.Group();
+  /** World AABB. */
   readonly box = new THREE.Box3();
+  /** Oriented box (picking). */
+  obb: OBB;
   item: Item;
   geo: ItemGeometry;
   readonly face: THREE.Mesh;
@@ -48,6 +52,7 @@ export class ItemView {
   constructor(item: Item, readonly isGhost = false, holes?: WallHole[]) {
     this.item = item;
     this.holes = holes;
+    this.obb = itemOBB(item);
     this.geo = acquireGeometry(item, holes);
     this.face = new THREE.Mesh(this.geo.face);
     this.prepass = new THREE.Mesh(this.geo.face);
@@ -113,6 +118,7 @@ export class ItemView {
     this.content.position.set(-ls.w / 2, -ls.d / 2, -ls.h / 2);
     this.group.updateMatrixWorld(true);
     const b = itemBox(item);
+    this.obb = itemOBB(item);
     this.box.min.set(b.min.x, b.min.y, b.min.z);
     this.box.max.set(b.max.x, b.max.y, b.max.z);
   }

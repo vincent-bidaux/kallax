@@ -230,13 +230,19 @@ export function keepWallAnchor(
   after: { size: Size3; rotation: number; position: { x: number; y: number; z: number } },
 ): void {
   if (before.tilt && (before.tilt.x || before.tilt.y)) return;
-  const r = after.rotation;
-  const wa = r === 0 || r === 180 ? 'x' : 'y', da = wa === 'x' ? 'y' : 'x';
-  const dw = after.size.w - before.size.w, dd = after.size.d - before.size.d, dh = after.size.h - before.size.h;
+  // any angle about Z: local +Y (the back) = (−sin r, cos r); keep the centre across
+  // the width and the height, and the back plane (the centre moves by −Δd/2 along it)
+  const r = (after.rotation * Math.PI) / 180;
+  const c = Math.cos(r), s = Math.sin(r);
+  const snap = (v: number) => (Math.abs(v) < 1e-9 ? 0 : v);
+  const ac = Math.abs(snap(c)), as = Math.abs(snap(s));
+  const aabb = (z: Size3) => ({ w: ac * z.w + as * z.d, d: as * z.w + ac * z.d });
+  const w0 = aabb(before.size), w1 = aabb(after.size);
   const p = after.position;
-  p[wa] -= dw / 2;
-  // back (local +Y) on the max side for rotation 0 (+Y) and 270 (+X)
-  if (r === 0 || r === 270) p[da] -= dd;
+  const dd = after.size.d - before.size.d, dh = after.size.h - before.size.h;
+  const cx = p.x + w0.w / 2 - snap(-s) * dd / 2, cy = p.y + w0.d / 2 - snap(c) * dd / 2;
+  p.x = cx - w1.w / 2;
+  p.y = cy - w1.d / 2;
   p.z = Math.max(0, p.z - dh / 2);
   for (const k of ['x', 'y', 'z'] as const) p[k] = Math.round(p[k] * 1000) / 1000;
 }

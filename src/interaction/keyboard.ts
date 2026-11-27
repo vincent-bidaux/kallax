@@ -6,6 +6,7 @@ import * as cmd from './commands';
 import { ui } from './context';
 import { cancelActiveDrag } from './drag-drop';
 import { cancelActiveMove } from './select-move';
+import { cancelActiveRotate } from './rotate-tool';
 import { closeAllPopovers } from '../ui/popover';
 
 const FINE_STEP = 0.5;
@@ -42,7 +43,8 @@ export function installKeyboard(hooks: KeyboardHooks) {
 
     switch (k) {
       case 'Escape':
-        if (cancelActiveDrag() || cancelActiveMove()) { handled(); return; }
+        if (cancelActiveDrag() || cancelActiveMove() || cancelActiveRotate()) { handled(); return; }
+        if (ui.eyedropper) { handled(); ui.setEyedropper(false); return; }
         if (ui.insertTool) { handled(); ui.setInsertTool(null); return; }
         closeAllPopovers();
         if (store.exitGroup()) { handled(); return; }
@@ -72,7 +74,7 @@ export function installKeyboard(hooks: KeyboardHooks) {
     }
     if (inWidget && (k === ' ' || k === 'Enter')) return;
     switch (kl) {
-      case 'r': case 'R': handled(); cmd.rotateSelection(e.shiftKey ? -90 : 90, 'z'); return;
+      case 'r': case 'R': handled(); cmd.rotateSelection(e.shiftKey ? -cmd.ROT_STEP : cmd.ROT_STEP, 'z'); return;
       case 'x': case 'X': handled(); cmd.rotateSelection(e.shiftKey ? -90 : 90, 'x'); return;
       case 'y': case 'Y': handled(); cmd.rotateSelection(e.shiftKey ? -90 : 90, 'y'); return;
       case '1': handled(); cmd.setView('iso'); return;

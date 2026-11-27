@@ -1,10 +1,11 @@
 // Right inspector: composition summary / single item / multi-selection.
 import { store } from '../core/store';
 import type { BlockItem, BlockShape, EketItem, Item, KallaxItem, Rotation } from '../core/types';
-import { fmtCm, isOfficial, itemBox, kallaxNominal, unionBox, worldSize, boxesOverlap, MAX_CELLS, legsAvailable, KALLAX, cylinderDims, cylinderSize, collides, nextOfficial } from '../core/kallax';
+import { fmtCm, frameSize, isOfficial, itemBox, kallaxNominal, unionBox, worldSize, MAX_CELLS, legsAvailable, KALLAX, cylinderDims, cylinderSize, collides, nextOfficial } from '../core/kallax';
 import { DEFAULT_EKET_COLOR, EKET, EKET_COLORS, EKET_LEGS, EKET_LEG_BY_ID, eketLegsAllowed, type EketLegId, EKET_VARIANTS, eketColorSold, eketDef, eketDims, eketDisplayName, eketMinPrice, eketPrice, effectiveEketColor, type EketColorId, type EketVariant } from '../core/eket';
 import { BASKET_VARIANTS, DEFAULT_FINISH, KALLAX_LEGS_COLORS, type KallaxLegsColor, buildBom, fmtEur, frameFinishes, frameSold, type BasketVariant, type FinishId } from '../core/finishes';
-import { itemEuler, type Axis3 } from '../core/orient';
+import { itemEuler, normAngle, type Axis3 } from '../core/orient';
+import { toggleEyedropper } from '../interaction/rotate-tool';
 import { h, clear, toast } from './dom';
 import { icon } from './icons';
 import { button, numberField, segmented, stepper, switchRow, textField, tip, type NumberField } from './controls';
@@ -19,6 +20,7 @@ import { paramEditor, type ParamEditor } from './param-editor';
 import { frameOpening, isParamShape, isWallHung, keepWallAnchor, syncParam, tableStyle, tvInch } from '../core/objects-params';
 import { colorPicker, productLink, variantNote, variantPicker, type ColorPicker, type VariantPicker } from './variant-picker';
 import { collisionBoxes } from '../interaction/placement';
+import { itemOBB, obbFootprintOverlap, obbOverlap } from '../core/obb';
 import { groupName, soleGroup, selectionHasGroups } from '../core/groups';
 import { addSelectionToComponents } from './components';
 import { SHIFT } from './dom';
@@ -196,16 +198,19 @@ function itemPanel(id: string): Panel {
   tip(fy.el, t('insp.tipY'));
   tip(fz.el, t('insp.tipZ'));
 
-  const rotRows = (['x', 'y', 'z'] as Axis3[]).map(ax => {
+  // rotation: Z = any angle (field, ±45° buttons, padlock, eyedropper); X / Y = 90° tilts
+  const selectSelf = () => { if (!store.selection.includes(id)) store.select([id]); };
+  const rotZ = rotZRow(selectSelf);
+  const rotRows = (['x', 'y'] as Axis3[]).map(ax => {
     const val = h('output', { class: 'rot-val' });
-    const kb = ax === 'z' ? 'R' : ax === 'x' ? 'X' : 'Y';
-    const m = button({ icon: 'rotateCw', label: t('insp.rotMinus', { axis: ax.toUpperCase() }), iconOnly: true, kbd: `⇧${kb}`, cls: 'seg-like', onClick: () => rotateOne(-90, ax) });
-    const p = button({ icon: 'rotateCcw', label: t('insp.rotPlus', { axis: ax.toUpperCase() }), iconOnly: true, kbd: kb, cls: 'seg-like', onClick: () => rotateOne(90, ax) });
+    const kb = ax === 'x' ? 'X' : 'Y';
+    const m = button({ icon: 'rotateCw', label: t('insp.rotMinus', { axis: ax.toUpperCase(), deg: 90 }), iconOnly: true, kbd: `⇧${kb}`, cls: 'seg-like', onClick: () => rotateOne(-90, ax) });
+    const p = button({ icon: 'rotateCcw', label: t('insp.rotPlus', { axis: ax.toUpperCase(), deg: 90 }), iconOnly: true, kbd: kb, cls: 'seg-like', onClick: () => rotateOne(90, ax) });
     const row = h('div', { class: 'rot-row rot-axis' }, h('span', { class: `rot-ax ax-${ax}` }, ax.toUpperCase()), m, val, p);
     return { ax, val, m, p, row };
   });
   function rotateOne(d: 90 | -90, ax: Axis3) {
-    if (!store.selection.includes(id)) store.select([id]);
+    selectSelf();
     cmd.rotateSelection(d, ax);
   }
 
@@ -428,7 +433,7 @@ function itemPanel(id: string): Panel {
     dimsHost,
     priceHost,
     group(t('common.position'), h('div', { class: 'fields-3' }, fx.el, fy.el, fz.el)),
-    group(t('insp.rotation'), h('div', { class: 'rot-rows' }, rotRows.map(r => r.row))),
+    group(t('insp.rotation'), h('div', { class: 'rot-rows' }, rotZ.row, ...rotRows.map(r => r.row))),
     sizeGroup,
     ...(colorP ? [colorP.el] : []),
     ...(finishP ? [finishP.el] : []),
@@ -554,13 +559,17 @@ function itemPanel(id: string): Panel {
       fw!.set(it.size.w); fd!.set(it.size.d); fh!.set(it.size.h);
       handleSeg?.set(it.mirror ? 'l' : 'r');
     }
-    dimsHost.replaceChildren(dimsBlock(s.w, s.d, s.h));
+    // a turned item: its own width × depth (oriented box), not its bounding box
+    const fsz = frameSize(it);
+    dimsHost.replaceChildren(dimsBlock(fsz.w, fsz.d, fsz.h));
     fx.set(it.position.x); fy.set(it.position.y); fz.set(it.position.z);
     for (const f of [fx, fy, fz]) f.setStep(step());
     const eul = itemEuler(it);
+    rotZ.update(eul.z, locked);
     for (const r of rotRows) {
-      r.val.textContent = `${eul[r.ax]}°`;
-      r.val.setAttribute('aria-label', t('insp.rotAria', { axis: r.ax.toUpperCase(), deg: eul[r.ax] }));
+      const deg = eul[r.ax as 'x' | 'y'];
+      r.val.textContent = `${deg}°`;
+      r.val.setAttribute('aria-label', t('insp.rotAria', { axis: r.ax.toUpperCase(), deg }));
     }
     // layer picker
     const opts = store.doc.layers.map(l => `${l.id}|${l.name}`).join(';');
@@ -581,10 +590,43 @@ function itemPanel(id: string): Panel {
       collideSw.input.disabled = locked;
     }
     const mine = collisionBoxes(it);
-    overlapBanner.hidden = !collides(it) || !store.visibleItems().some(o => o.id !== it.id && collides(o) && collisionBoxes(o).some(ob => mine.some(b => boxesOverlap(b, ob))));
+    overlapBanner.hidden = !collides(it) || !store.visibleItems().some(o => o.id !== it.id && collides(o) && collisionBoxes(o).some(ob => mine.some(b => obbOverlap(b, ob))));
   };
   update();
   return { el, update };
+}
+
+/**
+ * Rotation about Z: −45° / angle field (any angle, decimals with a comma or
+ * a dot) / +45°, the free-rotation padlock and the angle eyedropper.
+ */
+function rotZRow(selectSelf: () => void): { row: HTMLElement; update(angle: number, locked: boolean): void } {
+  const field = numberField({
+    label: 'Z', axis: 'z', ariaLabel: t('insp.rotZAria'), value: 0, step: 1, suffix: '°',
+    onCommit: v => { selectSelf(); cmd.rotateSelectionTo(normAngle(v)); },
+  });
+  field.el.classList.add('rot-num');
+  tip(field.input, t('insp.rotZTip'));
+  const step = cmd.ROT_STEP;
+  const m = button({ icon: 'rotateCw', label: t('insp.rotMinus', { axis: 'Z', deg: step }), iconOnly: true, kbd: `⇧R`, cls: 'seg-like', onClick: () => { selectSelf(); cmd.rotateSelection(-step, 'z'); } });
+  const p = button({ icon: 'rotateCcw', label: t('insp.rotPlus', { axis: 'Z', deg: step }), iconOnly: true, kbd: 'R', cls: 'seg-like', onClick: () => { selectSelf(); cmd.rotateSelection(step, 'z'); } });
+  const lock = button({ icon: 'lock', label: t('rot.lockAria'), iconOnly: true, iconSize: 14, cls: 'seg-like rot-lock', onClick: () => store.setSettings({ rotationFree: !store.settings.rotationFree }) });
+  const pick = button({ icon: 'eyedropper', label: t('rot.pick'), iconOnly: true, iconSize: 14, cls: 'seg-like rot-pick', onClick: () => { selectSelf(); toggleEyedropper(); } });
+  tip(pick, t('rot.pick'), t('key.esc'));
+  const row = h('div', { class: 'rot-row rot-axis rot-z' }, h('span', { class: 'rot-ax ax-z' }, 'Z'), m, field.el, p, lock, pick);
+  return {
+    row,
+    update(angle, locked) {
+      field.set(Math.round(normAngle(angle) * 10) / 10);
+      const free = store.settings.rotationFree;
+      lock.replaceChildren(icon(free ? 'lockOpen' : 'lock', 14));
+      lock.classList.toggle('on', free);
+      lock.setAttribute('aria-pressed', String(free));
+      tip(lock, free ? t('rot.freeTip') : t('rot.lockedTip'));
+      field.setDisabled(locked);
+      m.disabled = p.disabled = pick.disabled = locked;
+    },
+  };
 }
 
 /**
@@ -593,13 +635,11 @@ function itemPanel(id: string): Panel {
  */
 function liftStacked(items: Item[], x: Item, dz: number) {
   const top = itemBox(x).max.z;
-  const moved = [itemBox(x)];
-  const xyOverlap = (a: ReturnType<typeof itemBox>, b: ReturnType<typeof itemBox>) =>
-    a.min.x < b.max.x - 0.01 && a.max.x > b.min.x + 0.01 && a.min.y < b.max.y - 0.01 && a.max.y > b.min.y + 0.01;
+  const moved = [itemOBB(x)];
   const above = items.filter(o => o.id !== x.id && itemBox(o).min.z >= top - 0.01).sort((a, b) => a.position.z - b.position.z);
   for (const o of above) {
-    const ob = itemBox(o);
-    if (moved.some(m => xyOverlap(m, ob))) { moved.push(ob); o.position = { ...o.position, z: o.position.z + dz }; }
+    const ob = itemOBB(o);
+    if (moved.some(m => obbFootprintOverlap(m, ob))) { moved.push(ob); o.position = { ...o.position, z: o.position.z + dz }; }
   }
 }
 
@@ -695,11 +735,14 @@ function multiPanel(gid: string | null): Panel {
   const collideHint = collideSw.el.querySelector('small');
   const collideGroup = h('div', { class: 'insp-group collide-group' }, collideSw.el);
   const priceHost = h('div', { class: 'price-host' });
+  // a whole group turns as one (about its pivot): Z angle of its reference member
+  const rotZ = gid ? rotZRow(() => { /* the group is the selection */ }) : null;
   el.append(
     h('div', { class: 'insp-hero' }, h('div', { class: 'hero-icon' }, icon(gid ? 'group' : 'duplicate', 22)),
       h('div', { class: 'hero-text' }, groupNameField ? groupNameField.el : title, sub)),
     h('div', { class: 'insp-group' }, grpRow.el, h('div', { class: 'comp-btn-wrap' }, compBtn)),
     group(gid ? t('group.size') : t('insp.groupSize'), dimsHost),
+    ...(rotZ ? [group(t('insp.rotation'), h('div', { class: 'rot-rows' }, rotZ.row))] : []),
     priceHost,
     finishP.el,
     eketP.el,
@@ -723,6 +766,10 @@ function multiPanel(gid: string | null): Panel {
       sub.title = parts.join(' · ');
     } else sub.textContent = parts.join(' · ');
     grpRow.update(gid, selectionHasGroups(store.selection, store.items), sel.length);
+    if (rotZ) {
+      const ref = cmd.rotationRef(sel);
+      if (ref) rotZ.update(ref.rotation, sel.every(i => store.isLocked(i)));
+    }
     delBtn.querySelector('.btn-label')!.textContent = gid ? t('group.delete') : t('insp.deleteSel');
     const u = unionBox(sel);
     if (u) dimsHost.replaceChildren(dimsBlock(u.max.x - u.min.x, u.max.y - u.min.y, u.max.z - u.min.z));

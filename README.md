@@ -12,7 +12,8 @@ Concepteur de meubles à base d'étagères IKEA **KALLAX**, rendu « plan d'arch
 - Fenêtres et portes percent automatiquement les murs
 - Habillage des cases : porte, 2 tiroirs, panier, séparation horizontale (outil + clic dans une case)
 - ⌥ + glisser pour dupliquer, ⌥ + flèches pour un déplacement fin (0,5 cm)
-- Rotation par pas de 90° sur X, Y, Z pour tous les objets (touches X, Y, R ; ⇧ pour −90°)
+- Rotation libre autour de Z : pas de 45° (touche R ; ⇧R pour −45°, boutons de l'inspecteur), angle saisi au clavier (décimales), poignée de rotation sur le sol (cadenas : pas de 45° / rotation libre aimantée aux 45° et aux angles des autres objets), pipette pour copier l'angle d'un objet. Bascule X / Y par pas de 90° (touches X, Y)
+- Objets tournés : aimantation entre objets de même angle (modulo 90°, ex. un Kallax à 34° contre un mur à 34°), collisions sur boîtes orientées, cotes le long des faces, ouvertures dans les murs tournés
 - Vues isométrique, cavalière (45°, rapport 1 ou 0,5 cabinet), rotation libre, retour d'un clic
 - ViewCube cliquable (faces, arêtes, coins), perspective / orthographique
 - Cotes automatiques par bloc et globales, on/off
