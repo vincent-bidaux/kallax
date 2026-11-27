@@ -283,6 +283,18 @@ class WalkMode {
     }
     if (e.repeat) return;
     const kl = e.key.toLowerCase();
+    // game easter egg — remove this block + src/game/ to extract
+    if (kl === 't' && this.walker) {
+      e.preventDefault();
+      const w = this.walker, from = { x: w.x, y: w.y, z: w.z, yaw: w.yaw, pitch: w.pitch, child: this.prefs.child, sound: this.prefs.sound };
+      import('../../game').then(m => {
+        if (!this.active) return;
+        const doc = JSON.parse(JSON.stringify(store.doc));
+        this.exit();
+        m.startGame({ doc, from });
+      }).catch(err => console.error(err));
+      return;
+    }
     if (kl === 'e') { e.preventDefault(); this.setChild(!this.prefs.child, true); }
     else if (kl === 'm') { e.preventDefault(); this.setSound(!this.prefs.sound, true); }
     else if (kl === 'b') { e.preventDefault(); this.prefs.bob = !this.prefs.bob; this.save(); this.render(); }
