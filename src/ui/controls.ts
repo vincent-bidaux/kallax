@@ -221,6 +221,8 @@ export interface Stepper { el: HTMLElement; set(v: number): void; setDisabled(d:
 
 export function stepper(o: {
   label: string; value: number; min: number; max: number; onChange: (v: number) => void;
+  /** Next allowed value from `v` in direction `dir` (null = none): skips forbidden values. Default ±1 within min–max. */
+  next?: (v: number, dir: 1 | -1) => number | null;
 }): Stepper {
   let value = o.value;
   const out = h('output', { class: 'stepper-val', 'aria-live': 'polite' }, String(value));
@@ -229,12 +231,17 @@ export function stepper(o: {
   const group = h('div', { class: 'stepper', role: 'group', 'aria-label': o.label }, dec, out, inc);
   const el = h('div', { class: 'field field-stepper' }, h('span', { class: 'field-label' }, o.label), group);
   let disabled = false;
+  const step = (v: number, dir: 1 | -1): number | null => {
+    if (o.next) return o.next(v, dir);
+    const n = v + dir;
+    return n < o.min || n > o.max ? null : n;
+  };
   const set = (v: number) => {
     value = v; out.textContent = String(v);
-    dec.disabled = disabled || v <= o.min; inc.disabled = disabled || v >= o.max;
+    dec.disabled = disabled || step(v, -1) == null; inc.disabled = disabled || step(v, 1) == null;
   };
-  dec.addEventListener('click', () => { if (value > o.min) { set(value - 1); o.onChange(value); } });
-  inc.addEventListener('click', () => { if (value < o.max) { set(value + 1); o.onChange(value); } });
+  dec.addEventListener('click', () => { const n = step(value, -1); if (n != null) { set(n); o.onChange(n); } });
+  inc.addEventListener('click', () => { const n = step(value, 1); if (n != null) { set(n); o.onChange(n); } });
   set(value);
   return { el, set, setDisabled(d) { disabled = d; set(value); } };
 }

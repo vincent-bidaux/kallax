@@ -10,6 +10,8 @@ import type { Item, Size3 } from '../core/types';
 import { buildChair } from './furniture-chairs';
 import { buildDesk } from './furniture-desks';
 import { buildBed, buildLamp, buildPlant } from './furniture-objects';
+import { buildEket } from './eket-geometry';
+import { EKET_LEG_BY_ID, eketDef } from '../core/eket';
 
 /**
  * A solid of revolution part (cylinder when ra === rb, cone frustum otherwise):
@@ -54,6 +56,7 @@ export function geometryKey(item: Item, holes?: WallHole[]): string {
     const ins = validInserts(item).map(([c, r, t]) => `${c}.${r}${t[0]}`).join('');
     return `k${item.cols}x${item.rows}${item.legs ? 'L' : ''}${ins ? ':' + ins : ''}`;
   }
+  if (item.kind === 'eket') return `eket:${eketDef(item.variant).id}${item.legs ? ':' + item.legs : ''}`; // colour = material, not geometry
   const s = item.size;
   switch (item.shape) {
     case 'cylinder': return `c${item.axis ?? 'x'}${s.w}x${s.d}x${s.h}`;
@@ -72,6 +75,7 @@ export function geometryKey(item: Item, holes?: WallHole[]): string {
 
 function buildFor(key: string, item: Item, holes?: WallHole[]): ItemGeometry {
   if (item.kind === 'kallax') return buildKallax(key, item.cols, item.rows, !!item.legs, validInserts(item));
+  if (item.kind === 'eket') return buildEket(key, eketDef(item.variant).id, item.legs && EKET_LEG_BY_ID[item.legs] ? item.legs : undefined);
   const s = localSize(item);
   switch (item.shape) {
     case 'cylinder': return buildCylinder(key, s, item.axis ?? 'x');
@@ -268,10 +272,11 @@ function buildKallax(key: string, cols: number, rows: number, legs: boolean, ins
   const basketEdges: number[] = [];
   const extraFaces: THREE.BufferGeometry[] = [];
   const basketFaces: THREE.BufferGeometry[] = [];
+  let underFaces: THREE.BufferGeometry[] = [];
   if (legs) {
     const u = underframe(W, D, L);
     legEdges = u.edges;
-    extraFaces.push(...u.faces);
+    underFaces = u.faces;
   }
   for (const [c, r, t] of inserts) {
     const i = c * rows + r; // kallaxCells order: column-major
@@ -282,27 +287,19 @@ function buildKallax(key: string, cols: number, rows: number, legs: boolean, ins
     (t === 'basket' ? basketEdges : legEdges).push(...f.edges);
   }
   // Material groups (used by the "Couleurs des finitions" mode, ignored with a
-  // single material): 0 = frame + wooden fittings + underframe, 1 = baskets.
+  // single material): 0 = frame + wooden fittings, 1 = baskets, 2 = underframe.
   const strip = (p: THREE.BufferGeometry) => {
     const g = p.index ? p.toNonIndexed() : p;
     for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'normal') g.deleteAttribute(name);
     g.clearGroups();
     return g;
   };
-  if (extraFaces.length) face = mergeGeometries([face, ...extraFaces].map(strip)) ?? face;
+  const parts = [[face, ...extraFaces], basketFaces, underFaces].map(l => l.map(strip));
+  const counts = parts.map(l => l.reduce((n, g) => n + g.getAttribute('position').count, 0));
+  face = (parts.flat().length > 1 ? mergeGeometries(parts.flat()) : parts[0][0]) ?? face;
   face.clearGroups();
-  if (basketFaces.length) {
-    const frameCount = face.getAttribute('position').count;
-    const merged = mergeGeometries([strip(face), ...basketFaces.map(strip)]);
-    if (merged) {
-      face = merged;
-      face.clearGroups();
-      face.addGroup(0, frameCount, 0);
-      face.addGroup(frameCount, face.getAttribute('position').count - frameCount, 1);
-    }
-  } else {
-    face.addGroup(0, face.getAttribute('position').count, 0);
-  }
+  let start = 0;
+  counts.forEach((n, i) => { if (n) face.addGroup(start, n, i); start += n; });
   face.computeBoundingBox();
   face.computeBoundingSphere();
 

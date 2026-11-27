@@ -3,7 +3,7 @@
 import { store, uid } from '../core/store';
 import type { Item, Settings, ViewPreset, Vec3 } from '../core/types';
 import { rotateVec, rotatedOrientation, type Axis3 } from '../core/orient';
-import { itemBox, unionBox, worldSize, boxesOverlap } from '../core/kallax';
+import { itemBox, unionBox, worldSize, boxesOverlap, collides } from '../core/kallax';
 import { ui } from './context';
 import { toast } from '../ui/dom';
 import { t } from '../core/i18n';
@@ -41,11 +41,13 @@ export function duplicate(axis: 'x' | 'y' | 'z' = 'x') {
   if (!sel.length) return;
   const u = unionBox(sel)!;
   const step = { x: u.max.x - u.min.x, y: u.max.y - u.min.y, z: u.max.z - u.min.z }[axis];
-  const others = store.visibleItems().map(itemBox);
+  // items with collisions off neither need a free slot nor block one
+  const others = store.visibleItems().filter(collides).map(itemBox);
+  const solid = sel.filter(collides);
   let k = 1;
-  for (; k < 30; k++) {
+  for (; k < 30 && solid.length; k++) {
     const off = step * k;
-    const clash = sel.some(it => {
+    const clash = solid.some(it => {
       const b = itemBox(it);
       b.min[axis] += off; b.max[axis] += off;
       return others.some(o => boxesOverlap(b, o));

@@ -11,7 +11,7 @@ export type Bom = ReturnType<typeof buildBom>;
 
 /** BOM of the visible composition (what the footer and the Composition panel show). */
 export function currentBom(): Bom {
-  return buildBom(store.visibleItems(), store.doc.finish, store.doc.basket);
+  return buildBom(store.visibleItems(), store.doc.finish, store.doc.basket, store.doc.eketFinish);
 }
 
 export function articleCount(b: Bom): number { return b.lines.reduce((s, l) => s + l.qty, 0); }

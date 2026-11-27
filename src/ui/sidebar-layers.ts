@@ -4,7 +4,7 @@ import type { Item, Layer } from '../core/types';
 import { fmtCm, worldSize } from '../core/kallax';
 import { h, clear, toast } from './dom';
 import { icon } from './icons';
-import { shapeIcon } from './inspector';
+import { itemIcon } from './inspector';
 import { button, tip } from './controls';
 import { t, tn } from '../core/i18n';
 
@@ -150,7 +150,7 @@ export function buildLayers(host: HTMLElement) {
           role: 'treeitem', tabindex: '0', 'aria-level': '2', 'aria-selected': String(sel.has(it.id)),
           dataset: { id: it.id, key: `i:${it.id}` },
         },
-          h('span', { class: 'item-glyph' }, it.kind === 'kallax' ? icon('grid', 13) : icon(shapeIcon(it.shape, it.variant), 13)),
+          h('span', { class: 'item-glyph' }, icon(itemIcon(it), 13)),
           nm,
           h('span', { class: 'item-dims' }, itemDims(it)),
           layer.locked ? h('span', { class: 'item-lock', 'aria-label': t('layers.lockedAria') }, icon('lock', 11)) : null,

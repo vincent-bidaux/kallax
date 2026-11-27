@@ -42,7 +42,7 @@ export function exportJSON() {
 export function validDoc(d: unknown): d is DesignDoc {
   const x = d as DesignDoc;
   return !!x && x.version === 1 && Array.isArray(x.items) && Array.isArray(x.layers) && x.layers.length > 0 &&
-    x.items.every(i => i && typeof i.id === 'string' && (i.kind === 'kallax' || i.kind === 'block') && i.position);
+    x.items.every(i => i && typeof i.id === 'string' && (i.kind === 'kallax' || i.kind === 'block' || i.kind === 'eket') && i.position);
 }
 
 export function openJSON() {

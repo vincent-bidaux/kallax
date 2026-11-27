@@ -3,9 +3,10 @@ import { CATALOG, IKEA_LINKS, INSERTS, KALLAX, fmtCm, kallaxOuter, cylinderSize,
 import type { InsertType } from '../core/types';
 import type { InsertTool } from '../interaction/context';
 import { store, uid } from '../core/store';
-import type { BlockItem, BlockShape, Item, KallaxItem } from '../core/types';
+import type { BlockItem, BlockShape, EketItem, Item, KallaxItem } from '../core/types';
+import { EKET, EKET_LINKS, EKET_VARIANTS, eketDef, eketDims, eketDisplayName, eketMinPrice, type EketVariant } from '../core/eket';
 import { h, svg } from './dom';
-import { numberField, segmented, tip } from './controls';
+import { numberField, segmented, switchRow, tip } from './controls';
 import { icon } from './icons';
 import { INSERT_NAMES, fmtEur, fmtEurShort, frameMinPrice, insertMinPrice } from '../core/finishes';
 import { t, locale, type TKey } from '../core/i18n';
@@ -70,53 +71,142 @@ function insertAtFreeSpot(it: Item) {
   ui.viewport.zoomToFit(true);
 }
 
+type LibTab = 'kallax' | 'eket';
+const LS_LIB_TAB = 'kallax-designer:lib-tab';
+
+/** EKET tiles: their own scale (a 35 cm cube would be a dot at the KALLAX tile scale); a 70 × 70 fills the drawing box. */
+const EKET_SCALE = TILE_BOX / 70;
+
+/** Front elevation of an EKET version, to scale (same scale for every EKET tile). */
+export function eketElevationSVG(v: EketVariant, k = EKET_SCALE): SVGSVGElement {
+  const d = eketDef(v);
+  const W = d.w * k, H = d.h * k, p = Math.max(1.3, EKET.panel * k), g = 0.8;
+  const f = (n: number) => n.toFixed(2);
+  const i0x = p, i1x = W - p, i0y = p, i1y = H - p;
+  const xm = W / 2, ym = H / 2;
+  const rect = (cls: string, x0: number, y0: number, x1: number, y1: number, rx = 0.4) =>
+    `<rect class="${cls}" x="${f(x0)}" y="${f(y0)}" width="${f(x1 - x0)}" height="${f(y1 - y0)}" rx="${rx}"/>`;
+  let body = rect('elev-cell', i0x, i0y, i1x, i1y, 0);
+  let holes = `M${f(i0x)} ${f(i0y)}h${f(i1x - i0x)}v${f(i1y - i0y)}h${f(i0x - i1x)}z`;
+  const fronts: [number, number, number, number][] = [];
+  const twoDrawers = () => { fronts.push([i0x + g, i0y + g, i1x - g, ym - g / 2], [i0x + g, ym + g / 2, i1x - g, i1y - g]); };
+  switch (v) {
+    case 'four': {
+      const dv = p;
+      body = '';
+      holes = '';
+      for (const [a, b, c, e] of [[i0x, i0y, xm - dv / 2, ym - dv / 2], [xm + dv / 2, i0y, i1x, ym - dv / 2],
+        [i0x, ym + dv / 2, xm - dv / 2, i1y], [xm + dv / 2, ym + dv / 2, i1x, i1y]]) {
+        body += rect('elev-cell', a, b, c, e, 0);
+        holes += `M${f(a)} ${f(b)}h${f(c - a)}v${f(e - b)}h${f(a - c)}z`;
+      }
+      break;
+    }
+    case 'door': case 'door-shelf': fronts.push([i0x + g, i0y + g, i1x - g, i1y - g]); break;
+    case 'doors-shelf': fronts.push([i0x + g, i0y + g, xm - g / 2, i1y - g], [xm + g / 2, i0y + g, i1x - g, i1y - g]); break;
+    case 'drawers': case 'drawers-70': case 'wall-drawers': twoDrawers(); break;
+    case 'media': {
+      const yf = i1y - 10.5 * k;
+      fronts.push([i0x + g, yf + g, i1x - g, i1y - g]);
+      body += `<path class="elev-detail" d="M${f(i0x)} ${f(yf)}H${f(i1x)}"/><circle class="elev-detail" cx="${f(xm)}" cy="${f((i0y + yf) / 2 - 3 * k)}" r="${f(3 * k)}"/>`;
+      break;
+    }
+    case 'glass': {
+      const a = i0x + g, b = i0y + g, w = i1x - i0x - 2 * g, c = a + w * 0.3, e = b + w * 0.4;
+      body += rect('elev-glass', a, b, a + w, b + w) +
+        `<path class="elev-detail" d="M${f(c)} ${f(e + w * 0.18)}l${f(w * 0.18)} ${f(-w * 0.18)}M${f(c + w * 0.08)} ${f(e + w * 0.3)}l${f(w * 0.22)} ${f(-w * 0.22)}"/>` +
+        `<path class="elev-hinge" d="M${f(a)} ${f(i0y + 0.4)}h1.8M${f(a)} ${f(i1y - 0.4)}h1.8"/>`;
+      break;
+    }
+  }
+  for (const [a, b, c, e] of fronts) body += rect('elev-front', a, b, c, e);
+  const pad = 1;
+  return svg(`<svg class="elev elev-eket" width="${f(W + pad * 2)}" height="${f(H + pad * 2)}" viewBox="${-pad} ${-pad} ${f(W + pad * 2)} ${f(H + pad * 2)}" aria-hidden="true">
+    ${body}
+    <path class="elev-frame" fill-rule="evenodd" d="M0 0h${f(W)}v${f(H)}h${f(-W)}z${holes}"/>
+    <rect class="elev-outline" x="0" y="0" width="${f(W)}" height="${f(H)}" rx=".8"/>
+  </svg>`);
+}
+
+function makeEket(v: EketVariant): EketItem {
+  return {
+    id: uid(), kind: 'eket', name: eketDisplayName(v), variant: v,
+    position: { x: 0, y: 0, z: 0 }, rotation: 0, layerId: store.doc.activeLayerId,
+  };
+}
+
+/** Arrow-key navigation inside a tile grid (`cols` tiles per row). */
+function gridKeys(el: HTMLElement, list: () => HTMLElement[], cols: number, onEnter: () => void) {
+  el.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); onEnter(); }
+    if (ev.key.startsWith('Arrow')) {
+      ev.preventDefault();
+      const vis = list();
+      const i = vis.indexOf(el);
+      const d = ev.key === 'ArrowRight' ? 1 : ev.key === 'ArrowLeft' ? -1 : ev.key === 'ArrowDown' ? cols : -cols;
+      vis[Math.max(0, Math.min(vis.length - 1, i + d))]?.focus();
+    }
+  });
+}
+
 export function buildLibrary(host: HTMLElement) {
-  // ── KALLAX ──
-  let filter: 'all' | 'ikea' = 'all';
+  // ── KALLAX: the formats IKEA sells (both orientations, except 3×1) ──
   const grid = h('div', { class: 'lib-grid', role: 'list', 'aria-label': t('lib.sizesAria') });
-  const tiles: { el: HTMLElement; entry: CatalogEntry }[] = [];
+  const tiles: HTMLElement[] = [];
   for (const e of CATALOG) {
     const dims = `${fmtCm(e.exact.w)} × ${fmtCm(e.exact.d)} × ${fmtCm(e.exact.h)} cm`;
-    const min = frameMinPrice(e.cols, e.rows);
-    const price = min != null ? t('common.from', { price: fmtEur(min) }) : null;
+    const min = frameMinPrice(e.cols, e.rows)!;
+    const price = t('common.from', { price: fmtEur(min) });
     const el = h('div', {
-      class: `lib-tile ${e.official ? 'official' : 'custom'}`, role: 'listitem button', tabindex: '0',
-      'aria-label': price ? t('lib.tileAriaIkea', { label: e.label, nominal: e.nominal, price }) : t('lib.tileAriaCustom', { label: e.label, nominal: e.nominal }),
+      class: 'lib-tile', role: 'listitem button', tabindex: '0',
+      'aria-label': t('lib.tileAriaIkea', { label: e.label, nominal: e.nominal, price }),
     },
       h('div', { class: 'tile-art' }, kallaxElevationSVG(e.cols, e.rows)),
-      h('div', { class: 'tile-label' }, e.label,
-        e.official ? h('span', { class: 'badge-ikea', 'aria-hidden': 'true' }, t('common.ikea')) : null),
+      h('div', { class: 'tile-label' }, e.label),
       h('div', { class: 'tile-sub' }, e.nominal.replace(' cm', '')),
-      h('div', { class: `tile-price${price ? '' : ' custom'}`, 'aria-hidden': 'true' },
-        price ? [h('span', { class: 'tp-from' }, t('common.fromPrefix')), fmtEur(min!)] : t('common.customLower')),
+      h('div', { class: 'tile-price', 'aria-hidden': 'true' }, h('span', { class: 'tp-from' }, t('common.fromPrefix')), fmtEur(min)),
     );
-    tip(el, price
-      ? `KALLAX ${e.label} · ${dims} — ${price}`
-      : t('lib.tipCustom', { dims }));
+    tip(el, `KALLAX ${e.label} · ${dims} — ${price}`);
     el.addEventListener('pointerdown', (ev) => beginLibraryDrag(ev, el, () => makeKallax(e), `Kallax ${e.label}`));
-    el.addEventListener('keydown', (ev) => {
-      if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); insertAtFreeSpot(makeKallax(e)); }
-      if (ev.key.startsWith('Arrow')) {
-        ev.preventDefault();
-        const vis = tiles.filter(t => !t.el.hidden).map(t => t.el);
-        const i = vis.indexOf(el);
-        const d = ev.key === 'ArrowRight' ? 1 : ev.key === 'ArrowLeft' ? -1 : ev.key === 'ArrowDown' ? 3 : -3;
-        vis[Math.max(0, Math.min(vis.length - 1, i + d))]?.focus();
-      }
-    });
-    tiles.push({ el, entry: e });
+    gridKeys(el, () => tiles, 3, () => insertAtFreeSpot(makeKallax(e)));
+    tiles.push(el);
     grid.appendChild(el);
   }
-  const filterSeg = segmented<'all' | 'ikea'>({
-    ariaLabel: t('lib.filterAria'), size: 'sm', value: filter,
-    options: [{ value: 'all', label: t('lib.filterAll') }, { value: 'ikea', label: t('common.ikea'), tip: t('lib.filterIkeaTip') }],
-    onChange: v => { filter = v; for (const t of tiles) t.el.hidden = v === 'ikea' && !t.entry.official; },
-    cls: 'lib-filter',
+
+  // ── EKET: the 35 × 35 × 35 cm cube versions ──
+  const eketGrid = h('div', { class: 'lib-grid eket-grid', role: 'list', 'aria-label': t('lib.eketAria') });
+  const eketTiles: HTMLElement[] = [];
+  for (const v of EKET_VARIANTS) {
+    const name = eketDisplayName(v.id);
+    const min = eketMinPrice(v.id);
+    const price = t('common.from', { price: fmtEur(min) });
+    const el = h('div', {
+      class: 'lib-tile eket-tile', role: 'listitem button', tabindex: '0',
+      'aria-label': t('lib.eketTileAria', { name, dims: eketDims(v.id).replace(/×/g, ' × '), price }),
+    },
+      h('div', { class: 'tile-art' }, eketElevationSVG(v.id)),
+      h('div', { class: 'tile-label' }, v.label),
+      h('div', { class: 'tile-sub' }, eketDims(v.id)),
+      h('div', { class: 'tile-price', 'aria-hidden': 'true' }, h('span', { class: 'tp-from' }, t('common.fromPrefix')), fmtEur(min)),
+    );
+    tip(el, `${v.product} · ${eketDims(v.id).replace(/×/g, ' × ')} cm — ${price}${v.note ? ` · ${v.note}` : ''}`);
+    el.addEventListener('pointerdown', (ev) => beginLibraryDrag(ev, el, () => makeEket(v.id), name));
+    gridKeys(el, () => eketTiles, 3, () => insertAtFreeSpot(makeEket(v.id)));
+    eketTiles.push(el);
+    eketGrid.appendChild(el);
+  }
+
+  let tab: LibTab = (() => { try { return localStorage.getItem(LS_LIB_TAB) === 'eket' ? 'eket' : 'kallax'; } catch { return 'kallax'; } })();
+  const tabsSeg = segmented<LibTab>({
+    ariaLabel: t('lib.tabsAria'), size: 'sm', value: tab, cls: 'lib-tabs',
+    options: [{ value: 'kallax', label: 'Kallax', tip: t('lib.tabKallaxTip') }, { value: 'eket', label: 'EKET', tip: t('lib.tabEketTip') }],
+    onChange: v => showTab(v),
   });
-  const kallaxSec = h('section', { class: 'panel-section' },
-    h('div', { class: 'section-head' }, h('h3', { class: 'section-title' }, 'KALLAX'), filterSeg.el),
-    grid,
-    h('p', { class: 'hint' }, icon('cursor', 12), t('lib.kallaxHint')));
+  const kallaxHint = h('p', { class: 'hint' }, icon('cursor', 12), t('lib.kallaxHint'));
+  const eketHint = h('p', { class: 'hint' }, icon('magnet', 12), t('lib.eketHint'));
+  const furnSec = h('section', { class: 'panel-section' },
+    h('div', { class: 'section-head' }, h('h3', { class: 'section-title' }, t('lib.furnitureTitle')), tabsSeg.el),
+    grid, eketGrid, kallaxHint, eketHint);
 
   // ── HABILLAGE (cell fittings tool) ──
   const TOOLS: { id: InsertTool; label: string; icon: string; tip: string; price?: number }[] = [
@@ -150,15 +240,26 @@ export function buildLibrary(host: HTMLElement) {
   // ── OBJETS: three groups (Blocks / House / Objects), one selected type at a time ──
   const objSecs = buildObjectGroups();
 
+  const refList = (links: { label: string; url: string }[]) => h('ul', { class: 'ref-list' }, links.map(l =>
+    h('li', null, h('a', { href: l.url, target: '_blank', rel: 'noopener noreferrer', class: 'ref-link' },
+      icon('arrowUpRight', 13), h('span', null, l.label)))));
+  const kallaxRefs = h('div', null, refList(IKEA_LINKS), h('p', { class: 'ref-note' }, t('lib.refNote', { legs: fmtCm(KALLAX.legs) })));
+  const eketRefs = h('div', null, refList(EKET_LINKS), h('p', { class: 'ref-note' }, t('lib.eketRefNote')));
   const refSec = h('section', { class: 'panel-section lib-refs' },
     h('div', { class: 'section-head' }, h('h3', { class: 'section-title' }, t('lib.refsTitle'))),
-    h('ul', { class: 'ref-list' }, IKEA_LINKS.map(l =>
-      h('li', null, h('a', { href: l.url, target: '_blank', rel: 'noopener noreferrer', class: 'ref-link' },
-        icon('arrowUpRight', 13), h('span', null, l.label))))),
-    h('p', { class: 'ref-note' },
-      t('lib.refNote', { legs: fmtCm(KALLAX.legs) })),
-  );
-  host.append(kallaxSec, insertSec, ...objSecs, refSec);
+    kallaxRefs, eketRefs);
+
+  function showTab(v: LibTab) {
+    tab = v;
+    const k = v === 'kallax';
+    grid.hidden = !k; kallaxHint.hidden = !k; insertSec.hidden = !k; kallaxRefs.hidden = !k;
+    eketGrid.hidden = k; eketHint.hidden = k; eketRefs.hidden = k;
+    // the cell-fitting tool only applies to KALLAX
+    if (!k && ui.insertTool) ui.setInsertTool(null);
+    try { localStorage.setItem(LS_LIB_TAB, v); } catch { /* ignore */ }
+  }
+  host.append(furnSec, insertSec, ...objSecs, refSec);
+  showTab(tab);
 }
 
 // ── Objects module ───────────────────────────────────────────
@@ -189,6 +290,7 @@ const WINDOW_PRESETS = [
 ];
 
 const isBeam = (s: BlockShape) => s === 'cylinder' || s === 'square';
+const LS_NEW_COLLIDE = 'kallax-designer:new-collide';
 
 function buildObjectGroups(): HTMLElement[] {
   const drafts = Object.fromEntries(OBJECT_DEFS.map(def => [def.shape, {
@@ -208,7 +310,14 @@ function buildObjectGroups(): HTMLElement[] {
     preview, h('div', { class: 'block-tile-text' }, tileLabel, tileDims, tileExtra),
     h('span', { class: 'block-grip', 'aria-hidden': 'true' }, icon('grip', 16)));
   tip(objTile, t('obj.tileTip'));
-  const editor = h('div', { class: 'obj-editor' }, params, objTile);
+  // "Collisions" of the next objects (remembered): off = they may overlap anything
+  let collideNew = (() => { try { return localStorage.getItem(LS_NEW_COLLIDE) !== '0'; } catch { return true; } })();
+  const collideSw = switchRow({
+    label: t('insp.collisions'), hint: t('insp.collisionsHint'), icon: 'collide', value: collideNew,
+    onChange: v => { collideNew = v; try { localStorage.setItem(LS_NEW_COLLIDE, v ? '1' : '0'); } catch { /* ignore */ } updateTile(); },
+  });
+  collideSw.el.classList.add('lib-collide');
+  const editor = h('div', { class: 'obj-editor' }, params, collideSw.el, objTile);
 
   const nameOf = (shape: BlockShape) => drafts[shape].name ?? autoName(shape, drafts[shape].variant);
 
@@ -226,6 +335,7 @@ function buildObjectGroups(): HTMLElement[] {
     const c = colorOf(shape, o.variant, o.color);
     if (c) it.color = c.id;
     if (shape === 'door' && o.mirror) it.mirror = true;
+    if (!collideNew) it.collide = false;
     return it;
   };
   objTile.addEventListener('pointerdown', (ev) => beginLibraryDrag(ev, objTile, makeObject, nameOf(active)));
@@ -316,6 +426,7 @@ function buildObjectGroups(): HTMLElement[] {
       preview.replaceChildren(shape === 'box' ? boxIsoSVG(s.w, s.d, s.h) : icon(v?.icon ?? def.icon, 40));
     }
     tileDims.textContent = dims;
+    if (!collideNew) extra = [extra, t('obj.noCollisions')].filter(Boolean).join(' · ');
     tileExtra.textContent = extra;
     tileExtra.hidden = !extra;
     preview.classList.toggle('shape-art', shape !== 'box' && shape !== 'square');

@@ -5,7 +5,7 @@ import type { ViewportAPI } from '../core/contracts';
 import type { Item, Vec3 } from '../core/types';
 import { store } from '../core/store';
 import { ui } from './context';
-import { computePlacement, boxesFree, collisionBoxes } from './placement';
+import { computePlacement, itemsFree } from './placement';
 import { toast } from '../ui/dom';
 import { t } from '../core/i18n';
 import { uid } from '../core/store';
@@ -103,7 +103,7 @@ export function installSelectMove(vp: ViewportAPI) {
       }
     });
     const moved = store.items.filter(i => ids.has(i.id));
-    g.valid = boxesFree(moved.flatMap(i => collisionBoxes(i, i.position)), g.ids);
+    g.valid = itemsFree(moved.map(item => ({ item })), g.ids);
     if (!g.valid) {
       const prim = store.getItem(g.primary.id);
       vp.setGhost(prim ? { item: prim, valid: false } : null);

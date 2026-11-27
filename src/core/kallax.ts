@@ -15,6 +15,7 @@ import { orientDir, orientSize } from './orient';
 import { frameSold, legsCompatible } from './finishes';
 import { OBJECT_BY_SHAPE } from './objects';
 import { t, DECIMAL } from './i18n';
+import { eketSize } from './eket';
 
 export const KALLAX = {
   depth: 39,
@@ -48,9 +49,25 @@ export function kallaxNominal(n: number): number {
   return Math.round(kallaxOuter(n) + 0.5);
 }
 
-/** Frames sold by IKEA (either orientation) = those with a price (core/finishes.ts). Others are "sur mesure". */
+/**
+ * Formats IKEA sells = those with a price (core/finishes.ts), in either
+ * orientation — except 3×1: the 1×3 only stands upright. Other formats
+ * (older documents) still load and render, as "sur mesure".
+ */
 export function isOfficial(cols: number, rows: number): boolean {
-  return frameSold(cols, rows);
+  return frameSold(cols, rows) && !(cols === 3 && rows === 1);
+}
+
+/**
+ * Next sold value of one dimension, the other one fixed (inspector steppers):
+ * the first `isOfficial` format from `v` in direction `dir`, or null.
+ */
+export function nextOfficial(axis: 'cols' | 'rows', cols: number, rows: number, dir: 1 | -1): number | null {
+  const v0 = axis === 'cols' ? cols : rows;
+  for (let v = v0 + dir; v >= 1 && v <= MAX_CELLS; v += dir) {
+    if (axis === 'cols' ? isOfficial(v, rows) : isOfficial(cols, v)) return v;
+  }
+  return null;
 }
 
 export interface CatalogEntry {
@@ -62,12 +79,11 @@ export interface CatalogEntry {
   official: boolean;
 }
 
-/** Ordered catalogue shown in the library. */
+/** Ordered catalogue shown in the library: the formats IKEA sells, row by row (1 cell high first). */
 export const CATALOG: CatalogEntry[] = (() => {
-  // Every combination from 1×1 to 5×5, row by row.
   const order: [number, number][] = [];
   for (let rows = 1; rows <= MAX_CELLS; rows++)
-    for (let cols = 1; cols <= MAX_CELLS; cols++) order.push([cols, rows]);
+    for (let cols = 1; cols <= MAX_CELLS; cols++) if (isOfficial(cols, rows)) order.push([cols, rows]);
   return order.map(([cols, rows]) => ({
     cols, rows,
     label: `${cols}×${rows}`,
@@ -82,6 +98,7 @@ export function localSize(item: Item): Size3 {
   if (item.kind === 'kallax') {
     return { w: kallaxOuter(item.cols), d: KALLAX.depth, h: kallaxOuter(item.rows) + (item.legs ? KALLAX.legs : 0) };
   }
+  if (item.kind === 'eket') return eketSize(item.variant, !!item.legs);
   return { ...item.size };
 }
 
@@ -141,6 +158,14 @@ export function cylinderDims(it: import('./types').BlockItem): { diameter: numbe
 }
 export function cylinderSize(diameter: number, length: number, axis: 'x' | 'z'): Size3 {
   return axis === 'x' ? { w: length, d: diameter, h: diameter } : { w: diameter, d: diameter, h: length };
+}
+
+/**
+ * Collision participation: furniture (KALLAX, EKET) always collides; other
+ * objects unless their "Collisions" switch is off (`collide: false`).
+ */
+export function collides(it: Item): boolean {
+  return it.kind !== 'block' || it.collide !== false;
 }
 
 export function isWall(it: Item): boolean {

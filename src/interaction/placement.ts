@@ -2,9 +2,10 @@
 //  1. surface under the pointer (ground / top face / side face of an item)
 //  2. grid snap of the free axes
 //  3. magnetic snap to other items' faces (flush or aligned) — wins over grid
-//  4. validity: no AABB overlap with other visible items, z ≥ 0
+//  4. validity: no AABB overlap with other visible items, z ≥ 0 — items whose
+//     "Collisions" switch is off neither block nor are blocked (core/kallax collides)
 import type { Item, Vec3 } from '../core/types';
-import { boxesOverlap, itemBox, unionBox, worldSize, type Box3 } from '../core/kallax';
+import { boxesOverlap, collides, itemBox, unionBox, worldSize, type Box3 } from '../core/kallax';
 import { baseZOf, standsOnFloor } from '../ui/object-labels';
 import { store } from '../core/store';
 import { ui } from './context';
@@ -123,15 +124,33 @@ export function collisionBoxes(item: Item, p: Vec3 = item.position): Box3[] {
   return [body, strip];
 }
 
-/** Collision test of a set of boxes against all other visible items. */
+/**
+ * Collision test of a set of boxes against all other visible items that
+ * collide (objects whose "Collisions" switch is off never block).
+ */
 export function boxesFree(boxes: Box3[], ignoreIds: string[]): boolean {
   const ign = new Set(ignoreIds);
-  const others = store.visibleItems().filter(i => !ign.has(i.id)).flatMap(i => collisionBoxes(i));
+  const others = store.visibleItems().filter(i => !ign.has(i.id) && collides(i)).flatMap(i => collisionBoxes(i));
   for (const b of boxes) {
     if (b.min.z < -0.01) return false;
     for (const o of others) if (boxesOverlap(b, o)) return false;
   }
   return true;
+}
+
+/**
+ * Placement validity of items at given positions. Items with collisions off
+ * only have to stay above the floor; the others must not overlap any other
+ * colliding visible item (`ignoreIds` = the moved items themselves).
+ */
+export function itemsFree(list: { item: Item; pos?: Vec3 }[], ignoreIds: string[]): boolean {
+  const solid: Box3[] = [];
+  for (const { item, pos } of list) {
+    const bs = collisionBoxes(item, pos ?? item.position);
+    if (collides(item)) solid.push(...bs);
+    else if (bs.some(b => b.min.z < -0.01)) return false;
+  }
+  return boxesFree(solid, ignoreIds);
 }
 
 /** Max distance (cm) an item may be placed from the composition (or the origin). */
@@ -290,7 +309,7 @@ export function computePlacement(o: PlaceOpts): PlaceResult | null {
   for (const a of AXES) pos[a] = Math.round(pos[a] * 1000) / 1000;
   if (pos.z < 0 && pos.z > -0.01) pos.z = 0;
 
-  const valid = boxesFree(collisionBoxes(item, pos), o.ignoreIds);
+  const valid = itemsFree([{ item, pos }], o.ignoreIds);
   return {
     position: pos, valid, surface, guides,
     label: describeGuides(guides, surface, hitItem?.id ?? null),
@@ -303,7 +322,7 @@ export function freeSpot(item: Item): Vec3 {
   const u = unionBox(vis);
   if (!u) return { x: 0, y: 0, z: 0 };
   let p: Vec3 = { x: u.max.x, y: u.min.y, z: 0 };
-  for (let i = 0; i < 40 && !boxesFree(collisionBoxes(item, p), []); i++) p = { ...p, x: p.x + 5 };
+  for (let i = 0; i < 40 && !itemsFree([{ item, pos: p }], []); i++) p = { ...p, x: p.x + 5 };
   return p;
 }
 

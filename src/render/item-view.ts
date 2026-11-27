@@ -14,7 +14,8 @@ import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeome
 import { acquireGeometry, geometryKey, releaseGeometry, type ItemGeometry, type WallHole } from './item-geometry';
 import { MaterialLibrary, RO, faceSetOf, type VisualState } from './materials';
 import { itemBox, localSize, worldSize } from '../core/kallax';
-import { effectiveFinish } from '../core/finishes';
+import { effectiveFinish, kallaxLegsColor } from '../core/finishes';
+import { EKET_LEG_BY_ID, effectiveEketColor } from '../core/eket';
 import { store } from '../core/store';
 import { colorOf, type ObjectColor } from '../core/objects';
 import { SIL_KEY, type SilhouetteEdges } from './furniture-chairs';
@@ -211,11 +212,12 @@ export class ItemView {
   private finishKey(lib: MaterialLibrary): string {
     const set = faceSetOf(this.item);
     if (!lib.mode.finishColors) return set;
+    if (this.item.kind === 'eket') return `${set}|e:${effectiveEketColor(this.item, store.doc.eketFinish)}|${this.item.legs ?? ''}`;
     if (this.item.kind !== 'kallax') {
       const c = this.objectColor();
       return c ? `${set}|o:${c.hex}|${c.hex2 ?? ''}` : set;
     }
-    return `${set}|${effectiveFinish(this.item, store.doc.finish)}|${store.doc.basket ?? 'naturel'}`;
+    return `${set}|${effectiveFinish(this.item, store.doc.finish)}|${store.doc.basket ?? 'naturel'}|${kallaxLegsColor(this.item).id}`;
   }
 
   /** True when the item's finish / colour (or the document's global finish / basket) changed since the last applyMaterials. */
@@ -239,11 +241,21 @@ export class ItemView {
       this.inner.material = main.lines[state].inner;
       this.fit.material = main.lines[state].inner;
       silLine = main.lines[state].outer;
+    } else if (lib.mode.finishColors && this.item.kind === 'eket') {
+      // carcass in the EKET colour (group 0), legs in their wood / metal tone (group 1)
+      const fin = lib.eketFinish(effectiveEketColor(this.item, store.doc.eketFinish));
+      const leg = this.item.legs && EKET_LEG_BY_ID[this.item.legs] ? lib.objectFinish(EKET_LEG_BY_ID[this.item.legs].hex) : fin;
+      this.face.material = this.geo.face.groups.length > 1 ? [fin.face[state], leg.face[state]] : fin.face[state];
+      this.outer.material = fin.lines[state].outer;
+      this.inner.material = fin.lines[state].inner;
+      this.fit.material = leg.lines[state].outer;
+      silLine = leg.lines[state].outer;
     } else if (lib.mode.finishColors && this.item.kind === 'kallax') {
       // Frame (+ wooden fittings) in the finish colour, BRANÄS baskets in rattan (geometry group 1).
       const fin = lib.kallaxFinish(effectiveFinish(this.item, store.doc.finish));
       const bsk = lib.basket(store.doc.basket);
-      this.face.material = [fin.face[state], bsk.face[state]];
+      const und = lib.objectFinish(kallaxLegsColor(this.item).hex);
+      this.face.material = [fin.face[state], bsk.face[state], und.face[state]];
       this.outer.material = fin.lines[state].outer;
       this.inner.material = fin.lines[state].inner;
       this.fit.material = bsk.lines[state].inner;

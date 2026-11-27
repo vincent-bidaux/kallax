@@ -5,6 +5,7 @@ import type { ThemeTokens } from '../core/theme';
 import { makeLineMaterial, disposeLineMaterial, LineMaterial } from './lines';
 import { FINISH_BY_ID, type BasketVariant, type FinishId } from '../core/finishes';
 import type { Item } from '../core/types';
+import { EKET_COLOR_BY_ID, type EketColorId } from '../core/eket';
 
 export type VisualState = 'normal' | 'hover' | 'select';
 export interface RenderMode {
@@ -75,7 +76,7 @@ export type FaceSet = 'kallax' | 'block' | 'wall' | 'plain';
  * dotted walls, or clean fills (doors, skirting, radiators, objects).
  */
 export function faceSetOf(item: Item): FaceSet {
-  if (item.kind === 'kallax') return 'kallax';
+  if (item.kind === 'kallax' || item.kind === 'eket') return 'kallax';
   switch (item.shape) {
     case 'wall': return 'wall';
     case 'door': case 'skirting': case 'radiator': case 'bed': case 'lamp': case 'plant': case 'chair': case 'desk': return 'plain';
@@ -312,6 +313,12 @@ export class MaterialLibrary {
   kallaxFinish(id: FinishId): FinishMaterials {
     const f = FINISH_BY_ID[id] ?? FINISH_BY_ID.blanc;
     return this.colourSet(`f:${f.id}`, f.color, f.line);
+  }
+
+  /** EKET materials in one of its colours ("Couleurs des finitions"). */
+  eketFinish(id: EketColorId): FinishMaterials {
+    const c = EKET_COLOR_BY_ID[id] ?? EKET_COLOR_BY_ID.blanc;
+    return this.colourSet(`e:${c.id}`, c.color, c.line);
   }
 
   /** BRANÄS basket materials (rattan tone of the chosen variant). */

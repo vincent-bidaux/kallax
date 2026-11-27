@@ -32,6 +32,8 @@ export interface KallaxItem extends ItemBase {
   rows: number;
   /** KALLAX underframe ("piètement" / "support"): raises the unit by KALLAX.legs. */
   legs?: boolean;
+  /** Underframe colour (absent = white). */
+  legsColor?: import('./finishes').KallaxLegsColor;
   /** Cell fittings, keyed "col,row" (col from the left, row from the bottom, as seen from the front). */
   inserts?: Record<string, InsertType>;
   /** Finish override (else the document's global finish). */
@@ -61,6 +63,25 @@ export interface BlockItem extends ItemBase {
   mirror?: boolean;
   /** Colour option id for objects that have colours (e.g. IKEA chair colours). See ObjectVariant.colors. */
   color?: string;
+  /**
+   * Collisions ("Collisions" switch). Absent = on. `false`: the object may
+   * overlap anything and anything may overlap it (magnetic snapping unchanged).
+   */
+  collide?: false;
+}
+
+/**
+ * An EKET cube cabinet (35 × 35 × 35 cm): open, with a door, a glass door or
+ * 2 drawers (see core/eket.ts). Furniture: priced, finish-coloured, collides.
+ */
+export interface EketItem extends ItemBase {
+  kind: 'eket';
+  /** Version id (core/eket.ts EKET_VARIANTS). */
+  variant: import('./eket').EketVariant;
+  /** Colour override (else the document's EKET colour). */
+  finish?: import('./eket').EketColorId;
+  /** EKET legs (4 × 10 cm), raising the unit by EKET.legs. Absent = none. */
+  legs?: import('./eket').EketLegId;
 }
 
 /**
@@ -72,7 +93,7 @@ export type BlockShape =
   | 'wall' | 'window' | 'door' | 'skirting' | 'radiator'
   | 'bed' | 'lamp' | 'plant' | 'desk' | 'chair';
 
-export type Item = KallaxItem | BlockItem;
+export type Item = KallaxItem | BlockItem | EketItem;
 
 export interface Layer {
   id: string;
@@ -91,6 +112,8 @@ export interface DesignDoc {
   finish?: import('./finishes').FinishId;
   /** BRANÄS basket variant. */
   basket?: import('./finishes').BasketVariant;
+  /** Default colour of every EKET cube (each one can override it). */
+  eketFinish?: import('./eket').EketColorId;
 }
 
 export type ThemeName = 'blueprint' | 'paper';

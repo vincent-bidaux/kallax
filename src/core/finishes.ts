@@ -5,6 +5,7 @@
 // ─────────────────────────────────────────────────────────────
 import type { InsertType, Item, KallaxItem } from './types';
 import { t, lang, locale } from './i18n';
+import { EKET_COLOR_BY_ID, EKET_LEG_BY_ID, eketDef, eketDims, eketPrice, effectiveEketColor, type EketColorId } from './eket';
 
 export type FinishId =
   | 'blanc' | 'blanc-brillant' | 'brun-noir' | 'chene-blanchi' | 'chene' | 'noyer' | 'gris';
@@ -55,6 +56,18 @@ const LEGS_OK = new Set(['2x2', '2x4', '4x2', '4x3', '4x4']);
 export function legsCompatible(cols: number, rows: number): boolean { return LEGS_OK.has(`${cols}x${rows}`); }
 export function legsPrice(cols: number): number { return cols === 2 ? 25 : 35; }
 export function legsLabel(cols: number): string { return t('product.legs', { w: cols === 2 ? 76 : 146 }); }
+
+/** Underframe colours ("KALLAX Structure"), same price in both. Absent = white (older documents). */
+export type KallaxLegsColor = 'blanc' | 'noir';
+export const KALLAX_LEGS_COLORS: { id: KallaxLegsColor; label: string; hex: string; urls: Record<76 | 146, string> }[] = [
+  { id: 'blanc', label: t('legs.blanc'), hex: '#efefec', urls: {
+    76: 'https://www.ikea.com/fr/fr/p/kallax-structure-blanc-90495596/', 146: 'https://www.ikea.com/fr/fr/p/kallax-structure-blanc-40501892/' } },
+  { id: 'noir', label: t('legs.noir'), hex: '#262628', urls: {
+    76: 'https://www.ikea.com/fr/fr/p/kallax-structure-noir-30495599/', 146: 'https://www.ikea.com/fr/fr/p/kallax-structure-noir-00501889/' } },
+];
+export function kallaxLegsColor(it: KallaxItem): (typeof KALLAX_LEGS_COLORS)[number] {
+  return KALLAX_LEGS_COLORS.find(c => c.id === it.legsColor) ?? KALLAX_LEGS_COLORS[0];
+}
 
 export type BasketVariant = 'naturel' | 'blanc';
 export const BASKET_VARIANTS: { id: BasketVariant; label: string; price: number }[] = [
@@ -123,7 +136,7 @@ export interface BomLine {
   total: number | null;
   /** Shown as a warning: finish not sold for this model, fallback price used, etc. */
   note?: string;
-  kind: 'frame' | 'legs' | 'insert' | 'object';
+  kind: 'frame' | 'legs' | 'insert' | 'eket' | 'object';
 }
 
 const nominal = (n: number) => Math.round(35 * n + 7);
@@ -137,7 +150,7 @@ function priceFor(map: PriceMap, f: FinishId): { price: number; used: FinishId; 
   return { price: first[1], used: first[0], exact: false };
 }
 
-export function buildBom(items: Item[], docFinish: FinishId | undefined, basket: BasketVariant | undefined): { lines: BomLine[]; total: number; unpriced: number } {
+export function buildBom(items: Item[], docFinish: FinishId | undefined, basket: BasketVariant | undefined, docEket?: EketColorId): { lines: BomLine[]; total: number; unpriced: number } {
   const map = new Map<string, BomLine>();
   const add = (l: Omit<BomLine, 'qty' | 'total'>, n = 1) => {
     const e = map.get(l.key);
@@ -145,6 +158,20 @@ export function buildBom(items: Item[], docFinish: FinishId | undefined, basket:
     else map.set(l.key, { ...l, qty: n, total: l.unit != null ? l.unit * n : null });
   };
   for (const it of items) {
+    if (it.kind === 'eket') {
+      // EKET: regular price of the product in its colour. A colour the product
+      // is not sold in falls back on the white price, with a note (like KALLAX finishes).
+      const v = eketDef(it.variant), c = effectiveEketColor(it, docEket);
+      const pr = eketPrice(v.id, c);
+      const extra = v.rail ? ` · ${t('eket.railIncluded')}` : '';
+      add({ key: `e:${v.id}:${c}`, label: v.product, detail: `${eketDims(v.id)} cm · ${EKET_COLOR_BY_ID[c].label}${extra}`,
+        unit: pr.price, kind: 'eket',
+        note: pr.exact ? undefined : t('bom.noteEketColor', { variant: v.label.toLowerCase(), used: EKET_COLOR_BY_ID[pr.used].label.toLowerCase() }) });
+      // legs: one pack of 4 per unit
+      const lg = it.legs ? EKET_LEG_BY_ID[it.legs] : undefined;
+      if (lg) add({ key: `el:${lg.id}`, label: lg.product, detail: t('bom.eketLegsDetail'), unit: lg.price, kind: 'legs' });
+      continue;
+    }
     if (it.kind !== 'kallax') continue;
     const f = effectiveFinish(it, docFinish);
     const fl = FINISH_BY_ID[f].label;
@@ -160,7 +187,8 @@ export function buildBom(items: Item[], docFinish: FinishId | undefined, basket:
     }
     if (it.legs) {
       const ok = legsCompatible(it.cols, it.rows);
-      add({ key: `l:${it.cols === 2 ? 76 : 146}`, label: legsLabel(it.cols), detail: '39 × 18 cm', unit: ok ? legsPrice(it.cols) : null, kind: 'legs',
+      const lc = kallaxLegsColor(it);
+      add({ key: `l:${it.cols === 2 ? 76 : 146}:${lc.id}`, label: legsLabel(it.cols), detail: `39 × 18 cm · ${lc.label}`, unit: ok ? legsPrice(it.cols) : null, kind: 'legs',
         note: ok ? undefined : t('bom.noteLegs') });
     }
     for (const [k, ty] of Object.entries(it.inserts ?? {})) {
@@ -176,8 +204,10 @@ export function buildBom(items: Item[], docFinish: FinishId | undefined, basket:
       }
     }
   }
-  const order = { frame: 0, legs: 1, insert: 2, object: 3 };
-  const lines = [...map.values()].sort((a, b) => order[a.kind] - order[b.kind] || (b.unit ?? 0) - (a.unit ?? 0));
+  const order = { frame: 0, legs: 1, insert: 2, eket: 3, object: 4 };
+  // EKET legs come right after the EKET units
+  const rank = (l: BomLine) => (l.key.startsWith('el:') ? order.eket + 0.5 : order[l.kind]);
+  const lines = [...map.values()].sort((a, b) => rank(a) - rank(b) || (b.unit ?? 0) - (a.unit ?? 0));
   const total = lines.reduce((s, l) => s + (l.total ?? 0), 0);
   const unpriced = lines.filter(l => l.total == null).reduce((s, l) => s + l.qty, 0);
   return { lines, total, unpriced };
