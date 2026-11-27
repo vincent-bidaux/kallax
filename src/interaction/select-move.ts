@@ -36,7 +36,12 @@ export function installSelectMove(vp: ViewportAPI) {
   const el = vp.container;
   const canvas = () => vp.getRenderer().domElement;
   let g: MoveGesture | null = null;
-  let emptyDown: { pid: number; x0: number; y0: number; additive: boolean; maxD: number } | null = null;
+  /**
+   * Press that the camera keeps (orbit on empty space, Ctrl-drag pan anywhere):
+   * a release without movement is a click — clear the selection (empty space)
+   * or toggle `toggleId` (Ctrl-click on an item).
+   */
+  let emptyDown: { pid: number; x0: number; y0: number; additive: boolean; maxD: number; toggleId?: string } | null = null;
   let hoverRaf = 0;
   let hoverEv: PointerEvent | null = null;
   let moveRaf = 0;
@@ -50,6 +55,11 @@ export function installSelectMove(vp: ViewportAPI) {
     if (e.button !== 0) return;
     const id = vp.pickItem(e.clientX, e.clientY);
     const additive = e.shiftKey || e.metaKey || e.ctrlKey;
+    if (e.ctrlKey) {
+      // Ctrl-drag pans the view, even from an item (OrbitControls); a Ctrl-click still toggles
+      emptyDown = { pid: e.pointerId, x0: e.clientX, y0: e.clientY, additive: true, maxD: 0, toggleId: id ?? undefined };
+      return;
+    }
     if (!id) {
       emptyDown = { pid: e.pointerId, x0: e.clientX, y0: e.clientY, additive, maxD: 0 };
       return; // let OrbitControls orbit
@@ -226,7 +236,9 @@ export function installSelectMove(vp: ViewportAPI) {
   window.addEventListener('pointerup', (e) => {
     if (!emptyDown || e.pointerId !== emptyDown.pid) return;
     const d = emptyDown; emptyDown = null;
-    if (d.maxD < 4 && !d.additive && store.selection.length) store.select([]);
+    if (d.maxD >= 4) return;
+    if (d.toggleId) { if (store.getItem(d.toggleId)) store.toggleSelect(d.toggleId); }
+    else if (!d.additive && store.selection.length) store.select([]);
   }, true);
 
   // ── hover + cursor coordinates ──

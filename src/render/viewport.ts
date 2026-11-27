@@ -229,7 +229,7 @@ export class Viewport implements ViewportAPI {
     c.maxZoom = ORTHO_BASE / MIN_VIEW_H;
     this.configureControlsFor(this.camera);
     c.addEventListener('change', this.onControlsChange);
-    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+    this.installPanModifiers(container);
 
     // ── materials, items ────────────────────────────────────
     this.mats = new MaterialLibrary(this.theme, { shadows: s.shadows, transparency: s.transparency, finishColors: s.finishColors });
@@ -312,6 +312,43 @@ export class Viewport implements ViewportAPI {
   }
 
   isWalking(): boolean { return !!this.walk; }
+
+  /**
+   * Mouse navigation (OrbitControls): left-drag orbits, right / middle-drag
+   * pan, wheel zooms. Ctrl-drag pans too (Bambu Studio style). Shift-drag is
+   * NOT a pan: it draws a marquee (interaction/marquee.ts stops the press
+   * before it reaches the controls).
+   *
+   * macOS turns Ctrl-click into a secondary click: some browsers then report
+   * button 2 (which OrbitControls would turn into an orbit, Ctrl inverting
+   * the right-button pan) and every browser fires `contextmenu`. A Ctrl press
+   * is therefore always handed to the controls as a left press (→ pan), and
+   * the context menu is suppressed over the whole viewport.
+   */
+  private installPanModifiers(container: HTMLElement) {
+    const c = this.controls;
+    const buttons = c.mouseButtons;
+    container.addEventListener('pointerdown', (e) => {
+      if (e.pointerType !== 'mouse' || !e.ctrlKey || e.button !== 2) return;
+      // Ctrl + secondary button: the RIGHT mapping, inverted by Ctrl, must read PAN
+      c.mouseButtons = { ...buttons, RIGHT: THREE.MOUSE.ROTATE };
+    }, true);
+    // bubble phase: OrbitControls (on the canvas) has read the mapping by now
+    container.addEventListener('pointerdown', () => { if (c.mouseButtons !== buttons) c.mouseButtons = buttons; });
+    window.addEventListener('pointerdown', () => { if (c.mouseButtons !== buttons) c.mouseButtons = buttons; });
+    container.addEventListener('contextmenu', (e) => e.preventDefault(), true);
+  }
+
+  /** Items caught by a marquee being drawn (live highlight), null when none. */
+  private marquee: { ids: Set<string>; additive: boolean } | null = null;
+  setMarquee(m: { ids: string[]; additive: boolean } | null): void {
+    const next = m ? { ids: new Set(m.ids), additive: m.additive } : null;
+    const same = (!next && !this.marquee) || (next && this.marquee && next.additive === this.marquee.additive
+      && next.ids.size === this.marquee.ids.size && [...next.ids].every(id => this.marquee!.ids.has(id)));
+    if (same) return;
+    this.marquee = next;
+    this.applyStates();
+  }
 
   setControlsEnabled(on: boolean): void {
     this.controlsWanted = on;
@@ -984,6 +1021,12 @@ export class Viewport implements ViewportAPI {
   }
 
   private stateOf(id: string, hoverGroup: string | null): VisualState {
+    const mq = this.marquee;
+    if (mq) {
+      // live preview of the marquee: ⇧-drag replaces the selection, ⇧⌘ / ⇧Alt adds to it
+      if (mq.additive && store.selection.includes(id)) return 'select';
+      return mq.ids.has(id) ? 'hover' : 'normal';
+    }
     if (store.selection.includes(id)) return 'select';
     if (store.hover === id) return 'hover';
     if (hoverGroup && store.getItem(id)?.groupId === hoverGroup) return 'hover';

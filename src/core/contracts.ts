@@ -70,6 +70,11 @@ export interface ViewportAPI {
   setGhost(g: GhostState | null): void;
   /** Enable/disable camera orbit/pan/zoom (disabled while dragging an item). */
   setControlsEnabled(on: boolean): void;
+  /**
+   * Live highlight of the items caught by a marquee being drawn (hover look);
+   * `additive`: the current selection stays shown. null = marquee over.
+   */
+  setMarquee(m: { ids: string[]; additive: boolean } | null): void;
 
   // ── camera ──
   /** Animate to a preset. 'cavalier' = oblique projection (front view + sheared depth). */

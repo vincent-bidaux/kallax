@@ -286,7 +286,7 @@ export function installRotateTool(vp: ViewportAPI) {
 
   const beforeRender = () => {
     const tgt = drag ? null : currentTarget();
-    const busy = ui.gesture === 'move' || ui.gesture === 'place' || !!ui.insertTool;
+    const busy = ui.gesture === 'move' || ui.gesture === 'place' || ui.gesture === 'marquee' || !!ui.insertTool;
     if ((!drag && !tgt) || busy) { hide(); return; }
     const items = drag ? store.items.filter(i => drag!.base.some(b => b.id === i.id)) : tgt!.items;
     const ref = drag ? null : tgt!.ref;

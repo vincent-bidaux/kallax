@@ -2,7 +2,7 @@
 import { store } from '../core/store';
 import { fmtCm } from '../core/kallax';
 import { ui } from '../interaction/context';
-import { h, MOD } from './dom';
+import { h, MOD, SHIFT, isMac } from './dom';
 import { icon } from './icons';
 import { t, tn, lang, setLang, type Lang } from '../core/i18n';
 import { tip } from './controls';
@@ -56,10 +56,11 @@ export function buildStatusbar(host: HTMLElement) {
     if (ui.gesture === 'place') hint.textContent = ui.gestureValid ? t('sb.hintDrop') : t('sb.hintDropBad');
     else if (ui.gesture === 'move') hint.textContent = ui.gestureValid ? t('sb.hintMove') : t('sb.hintMoveBad');
     else if (ui.gesture === 'rotate') hint.textContent = t('sb.hintRotate');
+    else if (ui.gesture === 'marquee') hint.textContent = tn(ui.marquee.additive ? 'sb.hintMarqueeAdd' : 'sb.hintMarquee', ui.marquee.count);
     else if (ui.eyedropper) hint.textContent = t('rot.pickHint');
     else if (ui.insertTool) hint.textContent = ui.toolHint ?? t('sb.hintInsert');
     else if (store.selection.length) hint.textContent = t('sb.hintSelection', { mod: MOD });
-    else hint.textContent = t('sb.hintIdle');
+    else hint.textContent = t('sb.hintIdle', { ctrl: isMac ? '⌃' : 'Ctrl+', shift: SHIFT });
   };
   ui.on(e => {
     if (e === 'cursor') updCursor();

@@ -7,6 +7,7 @@ import { ui } from './context';
 import { cancelActiveDrag } from './drag-drop';
 import { cancelActiveMove } from './select-move';
 import { cancelActiveRotate } from './rotate-tool';
+import { cancelActiveMarquee } from './marquee';
 import { closeAllPopovers } from '../ui/popover';
 import { toggleWalk } from './walk/walk-mode';
 
@@ -44,7 +45,7 @@ export function installKeyboard(hooks: KeyboardHooks) {
 
     switch (k) {
       case 'Escape':
-        if (cancelActiveDrag() || cancelActiveMove() || cancelActiveRotate()) { handled(); return; }
+        if (cancelActiveDrag() || cancelActiveMarquee() || cancelActiveMove() || cancelActiveRotate()) { handled(); return; }
         if (ui.eyedropper) { handled(); ui.setEyedropper(false); return; }
         if (ui.insertTool) { handled(); ui.setInsertTool(null); return; }
         closeAllPopovers();

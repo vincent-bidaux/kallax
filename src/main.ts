@@ -8,6 +8,7 @@ import { Measurements } from './render/measurements';
 import { ViewCube } from './render/viewcube';
 import { ui } from './interaction/context';
 import { installSelectMove } from './interaction/select-move';
+import { installMarquee } from './interaction/marquee';
 import { installKeyboard } from './interaction/keyboard';
 import { h } from './ui/dom';
 import { installTooltips } from './ui/controls';
@@ -102,6 +103,7 @@ function boot() {
   installPopoverDismiss();
   installInsertTool(viewport); // before select/move: its capture listener must run first
   installRotateTool(viewport); // idem (angle eyedropper)
+  installMarquee(viewport);    // idem: Shift presses (marquee) never reach select/move or the camera
   installSelectMove(viewport);
   installKeyboard({ openShortcuts: () => sheet.open(), isModalOpen: () => sheet.isOpen() || !!document.querySelector('dialog[open]') });
 

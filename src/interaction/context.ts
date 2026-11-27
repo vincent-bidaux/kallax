@@ -14,8 +14,10 @@ class UIState {
   cursor: Vec3 | null = null;
   /** Human-readable description of the last snap ("Accolé à Kallax 2×4 (X)"), null when none. */
   snap: string | null = null;
-  /** Current gesture: none / placing from library / moving items / turning them with the rotation handle. */
-  gesture: 'none' | 'place' | 'move' | 'rotate' = 'none';
+  /** Current gesture: none / placing from library / moving items / turning them with the rotation handle / drawing a marquee. */
+  gesture: 'none' | 'place' | 'move' | 'rotate' | 'marquee' = 'none';
+  /** Marquee: number of items it catches so far, and whether it adds to the selection. */
+  marquee = { count: 0, additive: false };
   /** Placement validity during a gesture. */
   gestureValid = true;
   /** Active "habillage" tool: click a Kallax cell to fit it. */
@@ -40,6 +42,11 @@ class UIState {
     const o = this.snapMark;
     if (o === m || (o && m && o.x === m.x && o.y === m.y && o.z0 === m.z0 && o.z1 === m.z1)) return;
     this.snapMark = m; this.emit('snap');
+  }
+  setMarqueeInfo(count: number, additive: boolean) {
+    if (count === this.marquee.count && additive === this.marquee.additive) return;
+    this.marquee = { count, additive };
+    this.emit('gesture');
   }
   setGesture(g: UIState['gesture'], valid = true) {
     if (g !== this.gesture || valid !== this.gestureValid) {
