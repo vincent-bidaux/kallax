@@ -11,6 +11,7 @@ export type ApiErrorCode =
   | 'invalid_email' | 'rate_limited'
   | 'invalid_code' | 'expired' | 'too_many_attempts'
   | 'not_found'
+  | 'too_many'       // 409: component quota reached
   | 'server';        // anything else
 
 export class ApiError extends Error {
@@ -31,7 +32,7 @@ export class ApiError extends Error {
   }
 }
 
-const KNOWN = new Set<ApiErrorCode>(['unauthorized', 'too_large', 'invalid_email', 'rate_limited', 'invalid_code', 'expired', 'too_many_attempts', 'not_found']);
+const KNOWN = new Set<ApiErrorCode>(['unauthorized', 'too_large', 'invalid_email', 'rate_limited', 'invalid_code', 'expired', 'too_many_attempts', 'not_found', 'too_many']);
 
 function isJson(r: Response) {
   return (r.headers.get('content-type') || '').toLowerCase().includes('application/json');

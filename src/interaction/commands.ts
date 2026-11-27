@@ -6,7 +6,8 @@ import { rotateVec, rotatedOrientation, type Axis3 } from '../core/orient';
 import { itemBox, unionBox, worldSize, boxesOverlap, collides } from '../core/kallax';
 import { ui } from './context';
 import { toast } from '../ui/dom';
-import { t } from '../core/i18n';
+import { t, tn } from '../core/i18n';
+import { fullGroups, nextGroupName, regroupCopies } from '../core/groups';
 
 const r3 = (v: number) => Math.round(v * 1000) / 1000;
 
@@ -62,8 +63,66 @@ export function duplicate(axis: 'x' | 'y' | 'z' = 'x') {
     if (store.isLocked(c)) c.layerId = store.doc.activeLayerId;
     return c;
   });
-  store.update(d => { d.items.push(...copies); });
-  store.select(copies.map(c => c.id));
+  const names = copyGroups(copies, sel.map(i => i.id));
+  store.update(d => { d.items.push(...copies); addGroupNames(d, names); });
+  store.select(copies.map(c => c.id), true);
+}
+
+/**
+ * Copies of whole selected groups become new groups (fresh groupIds, same
+ * names); a member copied from inside an entered group stays in that group.
+ * Returns the names of the new groups (to store in doc.groups).
+ */
+export function copyGroups(copies: Item[], sourceSelection: string[]): Record<string, { name: string }> {
+  const whole = new Set(fullGroups(sourceSelection, store.visibleItems()));
+  const names: Record<string, { name: string }> = {};
+  const remap = copies.filter(c => c.groupId && whole.has(c.groupId));
+  regroupCopies(remap, () => uid('grp'), store.doc, names);
+  return names;
+}
+export function addGroupNames(d: import('../core/types').DesignDoc, names: Record<string, { name: string }>) {
+  if (Object.keys(names).length) d.groups = { ...(d.groups ?? {}), ...names };
+}
+
+// ── groups ──
+/** ⌘G: make one group of the selection (grouped items are merged into the new group). */
+export function groupSelection() {
+  if (warnLocked()) return;
+  const sel = editableSelection();
+  if (sel.length < 2) { toast(t('group.needTwo')); return; }
+  const gid = uid('grp');
+  const name = nextGroupName(store.doc);
+  const ids = new Set(sel.map(i => i.id));
+  store.update(d => {
+    for (const it of d.items) if (ids.has(it.id)) it.groupId = gid;
+    d.groups = { ...(d.groups ?? {}), [gid]: { name } };
+  });
+  store.enteredGroup = null;
+  store.select([...ids], true);
+  toast(tn('group.grouped', ids.size, { name }), 1600);
+}
+
+/** ⇧⌘G: dissolve every group touched by the selection (its items stay selected). */
+export function ungroupSelection() {
+  if (warnLocked()) return;
+  const sel = editableSelection();
+  const gids = new Set(sel.map(i => i.groupId).filter((g): g is string => !!g));
+  if (!gids.size) { toast(t('group.noneSelected')); return; }
+  const keep = [...store.selection];
+  const members = store.items.filter(i => i.groupId && gids.has(i.groupId)).map(i => i.id);
+  store.update(d => {
+    for (const it of d.items) if (it.groupId && gids.has(it.groupId)) delete it.groupId;
+    if (d.groups) for (const g of gids) delete d.groups[g];
+  });
+  store.enteredGroup = null;
+  store.select([...new Set([...keep, ...members])], true);
+  toast(gids.size > 1 ? t('group.ungroupedN', { n: gids.size }) : t('group.ungrouped'), 1400);
+}
+
+export function renameGroup(gid: string, name: string) {
+  name = name.trim();
+  if (!name || store.doc.groups?.[gid]?.name === name) return;
+  store.update(d => { d.groups = { ...(d.groups ?? {}), [gid]: { name } }; });
 }
 
 /** Rotate the editable selection by ±90° about a world axis through its group centre, then re-snap to the grid. */

@@ -12,6 +12,12 @@ const GROUPS: [string, [string, string[]][]][] = [
     [t('sc.delete'), ['⌫', t('key.del')]],
     [t('sc.deselect'), [t('key.esc')]],
   ]],
+  [t('sc.groups'), [
+    [t('sc.group'), [`${MOD}G`]],
+    [t('sc.ungroup'), [`${SHIFT}${MOD}G`]],
+    [t('sc.enterGroup'), [t('key.dblclick'), `⌥${t('key.click')}`]],
+    [t('sc.exitGroup'), [t('key.esc')]],
+  ]],
   [t('sc.objects'), [
     [t('sc.rotCw'), ['R']],
     [t('sc.rotCcw'), [`${SHIFT}R`]],
@@ -38,12 +44,15 @@ export function buildShortcutsSheet() {
   const close = h('button', { type: 'button', class: 'sheet-close', 'aria-label': t('common.close') }, icon('xmark', 14));
   const dlg = h('dialog', { class: 'sheet', 'aria-labelledby': 'sheet-title' },
     h('div', { class: 'sheet-head' }, icon('keyboard', 18), h('h2', { id: 'sheet-title' }, t('sc.title')), close),
-    h('div', { class: 'sheet-cols' }, GROUPS.map(([title, rows]) =>
-      h('div', { class: 'sheet-group' }, h('h3', null, title),
+    // three columns: Édition + Groupes | Objets | Vue
+    h('div', { class: 'sheet-cols' }, [[0, 1], [2], [3]].map(col => h('div', { class: 'sheet-col' }, col.map(i => {
+      const [title, rows] = GROUPS[i];
+      return h('div', { class: 'sheet-group' }, h('h3', null, title),
         h('dl', null, rows.map(([label, keys]) => [
           h('dt', null, label),
           h('dd', null, keys.map(k => h('kbd', null, k))),
-        ]).flat())))),
+        ]).flat()));
+    })))),
   );
   close.addEventListener('click', () => closeSheet());
   dlg.addEventListener('click', (e) => { if (e.target === dlg) closeSheet(); });

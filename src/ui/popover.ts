@@ -120,6 +120,8 @@ export interface MenuItem {
   heading?: string;
   /** `lang` attribute of the label (e.g. a language name in its own language). */
   lang?: string;
+  /** Greyed out, not actionable. */
+  disabled?: boolean;
 }
 
 /** Fill a popover with menu items (role=menu). */
@@ -133,6 +135,7 @@ export function fillMenu(pop: Popover, items: MenuItem[]) {
       type: 'button', role: checkable ? 'menuitemradio' : 'menuitem', tabindex: '-1',
       class: `menu-item ${it.destructive ? 'destructive' : ''}${it.checked ? ' checked' : ''}`,
       'aria-checked': checkable ? String(!!it.checked) : undefined,
+      disabled: it.disabled ? true : undefined,
     },
       checkable ? (it.checked ? icon('check', 15, 'menu-check') : h('span', { class: 'icon-spacer' }))
         : it.icon ? icon(it.icon, 15) : h('span', { class: 'icon-spacer' }),

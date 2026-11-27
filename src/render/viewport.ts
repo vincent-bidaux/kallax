@@ -10,12 +10,13 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
-import type { GhostState, SurfaceHit, ViewportAPI } from '../core/contracts';
+import type { GhostState, SnapshotOpts, SurfaceHit, ViewportAPI } from '../core/contracts';
 import { store, type StoreEvent } from '../core/store';
 import { THEMES, type ThemeTokens } from '../core/theme';
 import type { Projection, Settings, Vec3, ViewPreset } from '../core/types';
 import { unionBox } from '../core/kallax';
-import { setLineResolution } from './lines';
+import { setLineResolution, makeLines, disposeObject } from './lines';
+import { fullGroups } from '../core/groups';
 import { ShearOrthoCamera } from './shear-camera';
 import { ItemView } from './item-view';
 import { geometryKey } from './item-geometry';
@@ -113,6 +114,10 @@ export class Viewport implements ViewportAPI {
   private views = new Map<string, ItemView>();
   private ghost: ItemView | null = null;
   private ghostValid = true;
+  /** Other items of a multi-item ghost (component drop). */
+  private ghostExtras: ItemView[] = [];
+  /** Dashed bounding boxes of the selected groups (and of the entered group). */
+  private groupBoxes = new THREE.Group();
   private hemi: THREE.HemisphereLight;
   private sun: THREE.DirectionalLight;
   private resizeObs: ResizeObserver;
@@ -186,7 +191,8 @@ export class Viewport implements ViewportAPI {
     this.sun.shadow.radius = 3;
     this.sun.shadow.bias = -0.0004;
     this.sun.shadow.normalBias = 0.4;
-    this.scene.add(this.ground.group, this.itemsRoot, this.overlay, this.hemi, this.sun, this.sun.target);
+    this.groupBoxes.name = 'group-boxes';
+    this.scene.add(this.ground.group, this.itemsRoot, this.overlay, this.groupBoxes, this.hemi, this.sun, this.sun.target);
 
     // ── cameras & controls ──────────────────────────────────
     this.persp = new THREE.PerspectiveCamera(FOV, 1, 1, 50000);
@@ -346,8 +352,24 @@ export class Viewport implements ViewportAPI {
   setGhost(g: GhostState | null): void {
     if (!g) {
       if (this.ghost) { this.ghost.dispose(); this.ghost = null; this.requestRender(); }
+      if (this.ghostExtras.length) { for (const v of this.ghostExtras) v.dispose(); this.ghostExtras = []; this.requestRender(); }
       return;
     }
+    // multi-item ghost: every item but the primary one
+    const extra = (g.items ?? []).filter(i => i !== g.item);
+    while (this.ghostExtras.length > extra.length) this.ghostExtras.pop()!.dispose();
+    extra.forEach((it, i) => {
+      let v = this.ghostExtras[i];
+      if (!v || v.geoKey !== geometryKey(it) || v.item.kind !== it.kind) {
+        v?.dispose();
+        v = new ItemView(it, true);
+        this.scene.add(v.group);
+        this.ghostExtras[i] = v;
+        v.applyGhostMaterials(this.mats, g.valid);
+        v.group.userData.ghostValid = g.valid;
+      } else v.setItem(it);
+      if (v.group.userData.ghostValid !== g.valid) { v.applyGhostMaterials(this.mats, g.valid); v.group.userData.ghostValid = g.valid; }
+    });
     if (!this.ghost || this.ghost.geoKey !== geometryKey(g.item) || this.ghost.item.kind !== g.item.kind) {
       this.ghost?.dispose();
       this.ghost = new ItemView(g.item, true);
@@ -413,6 +435,59 @@ export class Viewport implements ViewportAPI {
     return this.camera.quaternion.clone();
   }
 
+  snapshot(o: SnapshotOpts = {}): string | undefined {
+    const W = o.width ?? 320, Hh = o.height ?? 240;
+    const ids = o.ids?.length ? new Set(o.ids) : null;
+    const items = store.visibleItems().filter(i => !ids || ids.has(i.id));
+    const b = unionBox(items);
+    // state to restore
+    const saved = { q: this.camera.quaternion.clone(), target: this.controls.target.clone(), H: this.currentH() };
+    const hidden: THREE.Object3D[] = [];
+    const hide = (obj: THREE.Object3D) => { if (obj.visible) { obj.visible = false; hidden.push(obj); } };
+    hide(this.ground.group); hide(this.overlay); hide(this.groupBoxes);
+    if (this.ghost) hide(this.ghost.group);
+    for (const v of this.ghostExtras) hide(v.group);
+    const restyled: ItemView[] = [];
+    for (const v of this.views.values()) {
+      if (ids && !ids.has(v.item.id)) hide(v.group);
+      else if (v.state !== 'normal') { const st = v.state; v.applyMaterials(this.mats, 'normal'); v.state = st; restyled.push(v); }
+    }
+    let url: string | undefined;
+    try {
+      if (b) {
+        const box = new THREE.Box3(new THREE.Vector3(b.min.x, b.min.y, b.min.z), new THREE.Vector3(b.max.x, b.max.y, b.max.z));
+        const kind: CamKind = this.camera === this.persp ? 'persp' : 'ortho';
+        const fit = this.computeFit(saved.q, this.shearVector(this.shear, this.cavA, this.cavR), kind, { box, aspect: W / Hh, margin: 1.12, pad: 8 });
+        this.applyPose(saved.q, fit.target, fit.H);
+      }
+      this.camera.updateMatrixWorld();
+      this.updateCameraDepth();
+      this.mats.setPxPerCm(this.height / this.currentH());
+      this.updateSilhouettes();
+      this.renderer.render(this.scene, this.camera);
+      const src = this.renderer.domElement;
+      // the fit used the thumbnail's aspect: crop the centre of the canvas to it
+      const sa = src.width / Math.max(1, src.height), ta = W / Hh;
+      let sw = src.width, sh = src.height;
+      if (sa > ta) sw = sh * ta; else sh = sw / ta;
+      const c = document.createElement('canvas');
+      c.width = W; c.height = Hh;
+      const ctx = c.getContext('2d')!;
+      ctx.fillStyle = this.getTheme().bg;
+      ctx.fillRect(0, 0, W, Hh);
+      ctx.drawImage(src, (src.width - sw) / 2, (src.height - sh) / 2, sw, sh, 0, 0, W, Hh);
+      url = c.toDataURL('image/jpeg', o.quality ?? 0.8);
+    } catch { url = undefined; }
+    finally {
+      for (const obj of hidden) obj.visible = true;
+      for (const v of restyled) { const st = v.state; v.state = 'normal'; v.applyMaterials(this.mats, st); }
+      if (b) { this.applyPose(saved.q, saved.target, saved.H); this.syncControls(); }
+      this.dirty = true;
+      this.renderNow();
+    }
+    return url;
+  }
+
   dispose() {
     this.unsub();
     this.resizeObs.disconnect();
@@ -421,6 +496,7 @@ export class Viewport implements ViewportAPI {
     for (const v of this.views.values()) v.dispose();
     this.views.clear();
     this.ghost?.dispose();
+    for (const v of this.ghostExtras) v.dispose();
     this.mats.dispose();
     this.ground.dispose();
     this.renderer.dispose();
@@ -555,8 +631,9 @@ export class Viewport implements ViewportAPI {
   }
 
   /** Target + visible height framing the content for orientation q (and screen shear k). */
-  private computeFit(q: THREE.Quaternion, k: { x: number; y: number }, kind: CamKind): { target: THREE.Vector3; H: number } {
-    const box = this.contentBox();
+  private computeFit(q: THREE.Quaternion, k: { x: number; y: number }, kind: CamKind,
+    o: { box?: THREE.Box3; aspect?: number; margin?: number; pad?: number } = {}): { target: THREE.Vector3; H: number } {
+    const box = o.box ?? this.contentBox();
     const right = new THREE.Vector3(1, 0, 0).applyQuaternion(q);
     const up = new THREE.Vector3(0, 1, 0).applyQuaternion(q);
     const fwd = forwardOf(q);
@@ -575,10 +652,10 @@ export class Viewport implements ViewportAPI {
     const target = c.clone()
       .addScaledVector(right, (minX + maxX) / 2)
       .addScaledVector(up, (minY + maxY) / 2);
-    const aspect = this.width / Math.max(1, this.height);
+    const aspect = o.aspect ?? this.width / Math.max(1, this.height);
     const ext = Math.max(maxY - minY, (maxX - minX) / aspect);
     // margin for dimension lines / labels (~25 % + a constant for small items)
-    let H = ext * 1.3 + 50;
+    let H = ext * (o.margin ?? 1.3) + (o.pad ?? 50);
     if (kind === 'persp') H += 2 * maxDz * TAN_HALF_FOV;
     return { target, H };
   }
@@ -816,7 +893,10 @@ export class Viewport implements ViewportAPI {
     this.mats = new MaterialLibrary(this.theme, { shadows: s.shadows, transparency: s.transparency, finishColors: s.finishColors });
     for (const v of this.views.values()) v.applyMaterials(this.mats, v.state);
     if (this.ghost) this.ghost.applyGhostMaterials(this.mats, this.ghostValid);
+    for (const v of this.ghostExtras) v.applyGhostMaterials(this.mats, v.group.userData.ghostValid ?? true);
     old.dispose();
+    this.groupBoxKey = '';
+    this.updateGroupBoxes();
     this.applyModeFlags();
     if (themeChanged) {
       this.ground.setTheme(this.theme);
@@ -825,18 +905,52 @@ export class Viewport implements ViewportAPI {
     this.requestRender();
   }
 
-  private stateOf(id: string): VisualState {
+  private stateOf(id: string, hoverGroup: string | null): VisualState {
     if (store.selection.includes(id)) return 'select';
     if (store.hover === id) return 'hover';
+    if (hoverGroup && store.getItem(id)?.groupId === hoverGroup) return 'hover';
     return 'normal';
   }
 
   private applyStates() {
+    // hovering a grouped item highlights its whole group (unless that group is entered)
+    const hg = store.hover ? store.getItem(store.hover)?.groupId ?? null : null;
+    const hoverGroup = hg && hg !== store.enteredGroup ? hg : null;
     for (const v of this.views.values()) {
-      const st = this.stateOf(v.item.id);
+      const st = this.stateOf(v.item.id, hoverGroup);
       if (st !== v.state) v.applyMaterials(this.mats, st);
     }
+    this.updateGroupBoxes();
     this.requestRender();
+  }
+
+  /** Dashed box around each fully selected group; a fainter one around the entered group. */
+  private groupBoxKey = '';
+  private updateGroupBoxes() {
+    const vis = store.visibleItems();
+    const sel = fullGroups(store.selection, vis);
+    const entered = store.enteredGroup && vis.some(i => i.groupId === store.enteredGroup) ? store.enteredGroup : null;
+    const boxes: { b: NonNullable<ReturnType<typeof unionBox>>; strong: boolean }[] = [];
+    for (const g of sel) { const b = unionBox(vis.filter(i => i.groupId === g)); if (b) boxes.push({ b, strong: true }); }
+    if (entered && !sel.includes(entered)) { const b = unionBox(vis.filter(i => i.groupId === entered)); if (b) boxes.push({ b, strong: false }); }
+    const key = `${store.settings.theme}|` + boxes.map(x => `${x.strong ? 1 : 0}:${[x.b.min.x, x.b.min.y, x.b.min.z, x.b.max.x, x.b.max.y, x.b.max.z].map(v => v.toFixed(2)).join(',')}`).join(';');
+    if (key === this.groupBoxKey) return;
+    this.groupBoxKey = key;
+    for (const c of [...this.groupBoxes.children]) { c.removeFromParent(); disposeObject(c); }
+    for (const { b, strong } of boxes) {
+      const m = 2.5; // inflate a little so the box doesn't sit on the items' own edges
+      const x0 = b.min.x - m, y0 = b.min.y - m, z0 = Math.max(0, b.min.z - m), x1 = b.max.x + m, y1 = b.max.y + m, z1 = b.max.z + m;
+      const P = [
+        [x0, y0, z0, x1, y0, z0], [x1, y0, z0, x1, y1, z0], [x1, y1, z0, x0, y1, z0], [x0, y1, z0, x0, y0, z0],
+        [x0, y0, z1, x1, y0, z1], [x1, y0, z1, x1, y1, z1], [x1, y1, z1, x0, y1, z1], [x0, y1, z1, x0, y0, z1],
+        [x0, y0, z0, x0, y0, z1], [x1, y0, z0, x1, y0, z1], [x1, y1, z0, x1, y1, z1], [x0, y1, z0, x0, y1, z1],
+      ].flat();
+      const line = makeLines(P, {
+        color: this.theme.select, width: strong ? 1.6 : 1.2, opacity: strong ? 0.95 : 0.55,
+        dashed: true, dashSize: 4, gapSize: 3, depthTest: false, renderOrder: 6,
+      });
+      this.groupBoxes.add(line);
+    }
   }
 
   /**
@@ -857,7 +971,7 @@ export class Viewport implements ViewportAPI {
         v = new ItemView(it, false, h);
         this.itemsRoot.add(v.group);
         this.views.set(it.id, v);
-        v.applyMaterials(this.mats, this.stateOf(it.id));
+        v.applyMaterials(this.mats, this.stateOf(it.id, null));
       } else {
         const kindBefore = v.item.kind;
         v.setItem(it, h);

@@ -27,6 +27,18 @@ export interface GhostState {
   item: Item;
   /** false → drawn in `ghostBad` colour (collision). */
   valid: boolean;
+  /** Several items placed together (component drop): every one of them, `item` included. */
+  items?: Item[];
+}
+
+export interface SnapshotOpts {
+  /** Frame and show only these items (default: everything visible, current view). */
+  ids?: string[];
+  /** Output size in px (default 320 × 240). */
+  width?: number;
+  height?: number;
+  /** JPEG quality (default 0.8). */
+  quality?: number;
 }
 
 export interface ViewportAPI {
@@ -79,4 +91,10 @@ export interface ViewportAPI {
   onAfterRender(cb: () => void): () => void;
   /** Ask for a redraw (render loop is on-demand). */
   requestRender(): void;
+  /**
+   * Render a still image (JPEG data URL) of some items, framed with the current
+   * view direction, without the grid, dimensions or selection colours. The
+   * on-screen view is restored right after. Undefined if the canvas can't be read.
+   */
+  snapshot(o?: SnapshotOpts): string | undefined;
 }

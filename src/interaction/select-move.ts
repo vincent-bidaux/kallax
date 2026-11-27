@@ -9,6 +9,7 @@ import { computePlacement, itemsFree } from './placement';
 import { toast } from '../ui/dom';
 import { t } from '../core/i18n';
 import { uid } from '../core/store';
+import { copyGroups, addGroupNames } from './commands';
 
 interface MoveGesture {
   pid: number;
@@ -23,6 +24,8 @@ interface MoveGesture {
   collapseTo: string | null;
   /** ⌥-drag: move copies, leave the originals in place. */
   duplicate: boolean;
+  /** Selection before the gesture (restored when a ⌥-drag copy is cancelled). */
+  sel0: string[];
 }
 
 let cancelMove: (() => boolean) | null = null;
@@ -77,7 +80,7 @@ export function installSelectMove(vp: ViewportAPI) {
       pid: e.pointerId, x0: e.clientX, y0: e.clientY,
       primary: structuredClone(item), ids: canMove ? ids : [],
       orig: new Map(store.selectedItems().map(i => [i.id, { ...i.position }])),
-      grab, moving: false, valid: true, collapseTo, duplicate: e.altKey,
+      grab, moving: false, valid: true, collapseTo, duplicate: e.altKey, sel0: [...store.selection],
     };
     try { canvas().setPointerCapture(e.pointerId); } catch { /* ignore */ }
     window.addEventListener('pointermove', onGestureMove, true);
@@ -119,16 +122,18 @@ export function installSelectMove(vp: ViewportAPI) {
     if (!g) return;
     const map = new Map<string, string>();
     for (const id of g.ids) map.set(id, uid());
+    const copies = store.items.filter(i => map.has(i.id)).map(i => ({ ...structuredClone(i), id: map.get(i.id)!, name: i.name }));
+    const names = copyGroups(copies, g.ids);
     store.preview(doc => {
-      const copies = doc.items.filter(i => map.has(i.id)).map(i => ({ ...structuredClone(i), id: map.get(i.id)!, name: i.name }));
       doc.items.push(...copies);
+      addGroupNames(doc, names);
     });
     const orig = new Map<string, Vec3>();
     for (const [from, to] of map) { const o = g.orig.get(from); if (o) orig.set(to, o); }
     g.orig = orig;
     g.ids = [...map.values()];
     g.primary = { ...g.primary, id: map.get(g.primary.id) ?? g.primary.id };
-    store.select(g.ids);
+    store.select(g.ids, true);
     setCursor('copy');
   }
 
@@ -157,8 +162,12 @@ export function installSelectMove(vp: ViewportAPI) {
       if (commit && g.valid) store.commit();
       else {
         store.cancelPreview();
+        if (g.duplicate) store.select(g.sel0, true); // the copies are gone: back to the originals
         if (commit && !g.valid) toast(g.duplicate ? t('cmd.copyInvalid') : t('cmd.moveInvalid'));
       }
+    } else if (commit && g.duplicate && g.primary.groupId && store.enteredGroup !== g.primary.groupId) {
+      // ⌥-click (no drag) on a grouped item: enter its group, select that item alone
+      store.enterGroup(g.primary.groupId, g.primary.id);
     } else if (commit && g.collapseTo) {
       store.select([g.collapseTo]);
     }
@@ -187,6 +196,16 @@ export function installSelectMove(vp: ViewportAPI) {
     if (!g || ev.pointerId !== g.pid) return;
     endGesture(false);
   }
+
+  // ── double-click a grouped item: enter its group (edit one member) ──
+  el.addEventListener('dblclick', (e) => {
+    if (e.target !== canvas()) return;
+    const id = vp.pickItem(e.clientX, e.clientY);
+    const it = id ? store.getItem(id) : null;
+    if (!it?.groupId || store.enteredGroup === it.groupId) return;
+    e.stopPropagation();
+    store.enterGroup(it.groupId, it.id);
+  }, true);
 
   // ── empty-space click → clear selection (not after an orbit drag) ──
   window.addEventListener('pointermove', (e) => {

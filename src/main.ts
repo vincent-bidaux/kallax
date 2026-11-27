@@ -23,6 +23,8 @@ import { buildProjectsSheet, saveProject, openProjectsSheet } from './ui/project
 import { openJSON } from './ui/file-io';
 import { seedIfFirstLaunch } from './ui/seed';
 import { initAccount } from './ui/account';
+import { initComponents } from './ui/components';
+import { localizeDoc } from './ui/localize-doc';
 
 const LS_LAYOUT = 'kallax-designer:layout';
 
@@ -37,6 +39,8 @@ function applyTheme() {
 }
 
 function boot() {
+  // default names written in the other language follow the current one
+  store.setImportFilter(localizeDoc);
   applyTheme();
   const root = document.getElementById('app') ?? document.body.appendChild(h('div', { id: 'app' }));
   root.replaceChildren();
@@ -108,6 +112,7 @@ function boot() {
 
   // Who am I? Silent: the account button already shows the last known state.
   void initAccount();
+  initComponents();
 
   seedIfFirstLaunch().then(loaded => {
     if (loaded) requestAnimationFrame(() => viewport.zoomToFit(false));

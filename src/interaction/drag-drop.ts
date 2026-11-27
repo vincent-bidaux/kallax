@@ -1,8 +1,8 @@
 // Pointer-based drag from a library tile into the viewport (no HTML5 DnD).
-import type { Item } from '../core/types';
+import type { Item, Vec3 } from '../core/types';
 import { store } from '../core/store';
 import { ui } from './context';
-import { computePlacement, freeSpot, type PlaceResult } from './placement';
+import { computePlacement, freeSpot, itemsFree, type PlaceResult } from './placement';
 import { h, toast } from '../ui/dom';
 import { t, DECIMAL } from '../core/i18n';
 import { worldSize } from '../core/kallax';
@@ -32,6 +32,40 @@ export function cancelActiveDrag(): boolean {
  * A click without movement inserts the item at a free spot next to the composition.
  */
 export function beginLibraryDrag(e: PointerEvent, source: HTMLElement, make: () => Item, label: string) {
+  beginDrag(e, source, {
+    make, label,
+    drop: (it) => store.addItem(it),
+    click: () => {
+      const it = make();
+      it.layerId = store.doc.activeLayerId;
+      it.position = freeSpot(it);
+      store.addItem(it);
+      ui.viewport.zoomToFit(true);
+    },
+  });
+}
+
+/**
+ * Drag several items as one (a component): `proxy` is a box the size of their
+ * union, used for snapping / surfaces; `expand(pos)` gives the real items with
+ * their union min corner at `pos` (ghost + collision test); `drop(pos)` inserts them.
+ */
+export function beginMultiDrag(e: PointerEvent, source: HTMLElement, o: {
+  proxy: () => Item; expand: (pos: Vec3) => Item[]; label: string; drop: (pos: Vec3) => void; click: () => void;
+}) {
+  beginDrag(e, source, { make: o.proxy, label: o.label, expand: o.expand, drop: it => o.drop(it.position), click: o.click });
+}
+
+interface DragSpec {
+  make: () => Item;
+  label: string;
+  expand?: (pos: Vec3) => Item[];
+  drop: (placed: Item) => void;
+  click: () => void;
+}
+
+function beginDrag(e: PointerEvent, source: HTMLElement, spec: DragSpec) {
+  const { make, label } = spec;
   if (e.button !== 0) return;
   e.preventDefault();
   const x0 = e.clientX, y0 = e.clientY;
@@ -77,6 +111,19 @@ export function beginLibraryDrag(e: PointerEvent, source: HTMLElement, make: () 
     const res = computePlacement({ item, clientX: ev.clientX, clientY: ev.clientY, ignoreIds: [] });
     // Out-of-reach pointer (near the horizon…): keep the last valid ghost.
     if (!res && last) return;
+    if (res && spec.expand) {
+      // several items: the real items decide validity (the union box is only for placement)
+      const all = spec.expand(res.position);
+      res.valid = itemsFree(all.map(it => ({ item: it })), []);
+      last = res;
+      item.position = res.position;
+      ui.viewport.setGhost({ item: all[0], valid: res.valid, items: all });
+      ui.setSnap(res.label);
+      ui.setGesture('place', res.valid);
+      ui.setCursor(ui.viewport.rayToPlane(ev.clientX, ev.clientY, { x: 0, y: 0, z: 1 }, 0));
+      ui.viewport.requestRender();
+      return;
+    }
     last = res;
     if (res) {
       item.position = res.position;
@@ -120,11 +167,7 @@ export function beginLibraryDrag(e: PointerEvent, source: HTMLElement, make: () 
     if (!dragging) {
       cleanup();
       // simple click → insert next to the composition
-      const it = make();
-      it.layerId = store.doc.activeLayerId;
-      it.position = freeSpot(it);
-      store.addItem(it);
-      ui.viewport.zoomToFit(true);
+      spec.click();
       return;
     }
     if (pending) update(ev);
@@ -132,7 +175,7 @@ export function beginLibraryDrag(e: PointerEvent, source: HTMLElement, make: () 
     const placed = item;
     cleanup();
     if (ok && placed) {
-      store.addItem(placed);
+      spec.drop(placed);
     } else if (lastOver && last && !last.valid) {
       toast(t('cmd.spotTaken'));
     }

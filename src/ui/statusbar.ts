@@ -4,7 +4,8 @@ import { fmtCm } from '../core/kallax';
 import { ui } from '../interaction/context';
 import { h, MOD } from './dom';
 import { icon } from './icons';
-import { t, tn } from '../core/i18n';
+import { t, tn, lang, setLang, type Lang } from '../core/i18n';
+import { tip } from './controls';
 
 export function buildStatusbar(host: HTMLElement) {
   const cx = h('span', { class: 'coord-v' }, '—');
@@ -14,7 +15,17 @@ export function buildStatusbar(host: HTMLElement) {
   const snap = h('div', { class: 'sb-item sb-snap' });
   const sel = h('div', { class: 'sb-item sb-sel' });
   const hint = h('div', { class: 'sb-item sb-hint', 'aria-live': 'polite' });
-  host.append(coords, h('div', { class: 'sb-sep' }), snap, h('div', { class: 'sb-sep' }), sel, h('div', { class: 'sb-spacer' }), hint);
+  // compact language switch (also in the … menu): FR | EN, each in its own language
+  const LANGS: [Lang, string, string, string][] = [['fr', 'FR', 'Français', 'Afficher en français'], ['en', 'EN', 'English', 'Show in English']];
+  const langBtns = LANGS.map(([l, code, name, hintText]) => {
+    const b = h('button', { type: 'button', role: 'radio', class: `sb-lang-btn${lang === l ? ' on' : ''}`, lang: l, 'aria-checked': String(lang === l), 'aria-label': name }, code);
+    tip(b, hintText);
+    b.addEventListener('click', () => { if (lang !== l) setLang(l); });
+    return b;
+  });
+  const langSw = h('div', { class: 'sb-lang', role: 'radiogroup', 'aria-label': t('sb.langAria') }, langBtns);
+  host.append(coords, h('div', { class: 'sb-sep' }), snap, h('div', { class: 'sb-sep' }), sel, h('div', { class: 'sb-spacer' }), hint,
+    h('div', { class: 'sb-sep' }), langSw);
   host.setAttribute('role', 'status');
 
   const updCursor = () => {

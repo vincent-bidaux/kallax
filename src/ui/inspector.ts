@@ -17,6 +17,9 @@ import { OBJECT_BY_SHAPE, colorOf, variantOf } from '../core/objects';
 import { autoName, groupLabel, isAutoName, objLabel, variantLabel } from './object-labels';
 import { colorPicker, productLink, variantNote, variantPicker, type ColorPicker, type VariantPicker } from './variant-picker';
 import { collisionBoxes } from '../interaction/placement';
+import { groupName, soleGroup, selectionHasGroups } from '../core/groups';
+import { addSelectionToComponents } from './components';
+import { SHIFT } from './dom';
 
 interface Panel { el: HTMLElement; update(): void }
 
@@ -384,10 +387,17 @@ function itemPanel(id: string): Panel {
 
   const dupBtns = dupRow();
   const delBtn = button({ icon: 'trash', label: t('common.delete'), kbd: '⌫', cls: 'btn-destructive wide', onClick: () => { if (!store.selection.includes(id)) store.select([id]); cmd.deleteSelection(); } });
+  const compBtn = componentButton();
+  // member of a group (entered with a double-click): say so, offer to go back to the whole group
+  const groupText = h('span', { class: 'banner-text' });
+  const groupBack = h('button', { type: 'button', class: 'banner-link' }, t('group.selectWhole'));
+  tip(groupBack, t('group.selectWholeTip'), t('key.esc'));
+  groupBack.addEventListener('click', () => { store.exitGroup(); });
+  const groupBanner = h('div', { class: 'banner group-banner', role: 'note' }, icon('group', 13), groupText, groupBack);
 
   el.append(
     h('div', { class: 'insp-hero' }, heroIcon, h('div', { class: 'hero-text' }, nameField.el, typeLabel)),
-    lockBanner, overlapBanner,
+    groupBanner, lockBanner, overlapBanner,
     dimsHost,
     priceHost,
     group(t('common.position'), h('div', { class: 'fields-3' }, fx.el, fy.el, fz.el)),
@@ -400,7 +410,7 @@ function itemPanel(id: string): Panel {
     ...(collideSw ? [h('div', { class: 'insp-group collide-group' }, collideSw.el)] : []),
     group(t('common.layer'), layerWrap),
     group(t('common.duplicate'), dupBtns),
-    h('div', { class: 'insp-group' }, delBtn),
+    h('div', { class: 'insp-group insp-actions' }, compBtn, delBtn),
   );
 
   const editables: { setDisabled(d: boolean): void }[] = [fx, fy, fz, nameField];
@@ -415,6 +425,8 @@ function itemPanel(id: string): Panel {
     const s = worldSize(it);
     const locked = store.isLocked(it);
     nameField.set(it.name);
+    groupBanner.hidden = !it.groupId;
+    if (it.groupId) groupText.textContent = t('group.inGroup', { name: groupName(store.doc, it.groupId) });
     if (it.kind === 'kallax') {
       // every library format is IKEA's: only older custom formats get a pill
       const off = isOfficial(it.cols, it.rows);
@@ -572,11 +584,40 @@ function dupRow(): HTMLElement {
     b('z', 'arrowUp', t('insp.dupTop'), '+Z'));
 }
 
-// ── multi selection ──────────────────────────────────────────
-function multiPanel(): Panel {
+/** Wide secondary button: "Ajouter aux composants". */
+function componentButton(): HTMLButtonElement {
+  return button({ icon: 'component', label: t('comp.addTitle'), tip: t('comp.addTip'), cls: 'btn-secondary wide', onClick: () => { void addSelectionToComponents(); } });
+}
+
+/** Group / ungroup tiles (multi-selection and group panels). */
+function groupRow(): { el: HTMLElement; update(sole: string | null, hasGroups: boolean, n: number): void } {
+  const mk = (ic: string, label: string, kbd: string, tipText: string, on: () => void) => {
+    const el = h('button', { type: 'button', class: 'dup-btn' }, icon(ic, 18), h('span', { class: 'dup-label' }, label));
+    tip(el, tipText, kbd);
+    el.addEventListener('click', on);
+    return el;
+  };
+  const grp = mk('group', t('group.group'), `${MOD}G`, t('group.groupTip'), () => cmd.groupSelection());
+  const ungrp = mk('ungroup', t('group.ungroup'), `${SHIFT}${MOD}G`, t('group.ungroupTip'), () => cmd.ungroupSelection());
+  const el = h('div', { class: 'dup-row group-row' }, grp, ungrp);
+  return {
+    el,
+    update(sole, hasGroups, n) {
+      grp.hidden = !!sole || n < 2;
+      ungrp.hidden = !hasGroups;
+      el.style.gridTemplateColumns = `repeat(${[grp, ungrp].filter(b => !b.hidden).length || 1}, 1fr)`;
+    },
+  };
+}
+
+// ── multi selection (or one whole group) ─────────────────────
+function multiPanel(gid: string | null): Panel {
   const el = h('div', { class: 'insp-panel' });
   const title = h('div', { class: 'hero-title' });
   const sub = h('div', { class: 'hero-sub' });
+  const groupNameField = gid ? textField({ value: groupName(store.doc, gid), ariaLabel: t('group.nameAria'), cls: 'hero-name', onCommit: v => cmd.renameGroup(gid, v) }) : null;
+  const grpRow = groupRow();
+  const compBtn = componentButton();
   const dimsHost = h('div');
   const alignRow = h('div', { class: 'dup-row' },
     alignBtn('x', 'alignLeft', t('insp.alignLeft'), 'min X'),
@@ -619,8 +660,10 @@ function multiPanel(): Panel {
   const collideGroup = h('div', { class: 'insp-group collide-group' }, collideSw.el);
   const priceHost = h('div', { class: 'price-host' });
   el.append(
-    h('div', { class: 'insp-hero' }, h('div', { class: 'hero-icon' }, icon('duplicate', 22)), h('div', null, title, sub)),
-    group(t('insp.groupSize'), dimsHost),
+    h('div', { class: 'insp-hero' }, h('div', { class: 'hero-icon' }, icon(gid ? 'group' : 'duplicate', 22)),
+      h('div', { class: 'hero-text' }, groupNameField ? groupNameField.el : title, sub)),
+    h('div', { class: 'insp-group' }, grpRow.el, h('div', { class: 'comp-btn-wrap' }, compBtn)),
+    group(gid ? t('group.size') : t('insp.groupSize'), dimsHost),
     priceHost,
     finishP.el,
     eketP.el,
@@ -633,11 +676,18 @@ function multiPanel(): Panel {
     const sel = store.selectedItems();
     title.textContent = t('insp.selCount', { n: sel.length });
     const ks = sel.filter(isKallax), es = sel.filter(isEket), bs = sel.filter(isBlock);
-    sub.textContent = [
+    const parts = [
       ks.length ? t('insp.selKallax', { n: ks.length }) : '',
       es.length ? t('insp.selEket', { n: es.length }) : '',
       bs.length ? tn('insp.selBlocks', bs.length) : '',
-    ].filter(Boolean).join(' · ');
+    ].filter(Boolean);
+    if (gid) {
+      groupNameField!.set(groupName(store.doc, gid));
+      sub.textContent = `${t('group.kind')} · ${tn('comp.items', sel.length)}`;
+      sub.title = parts.join(' · ');
+    } else sub.textContent = parts.join(' · ');
+    grpRow.update(gid, selectionHasGroups(store.selection, store.items), sel.length);
+    delBtn.querySelector('.btn-label')!.textContent = gid ? t('group.delete') : t('insp.deleteSel');
     const u = unionBox(sel);
     if (u) dimsHost.replaceChildren(dimsBlock(u.max.x - u.min.x, u.max.y - u.min.y, u.max.z - u.min.z));
     // price of the selected furniture (KALLAX + EKET)
@@ -645,7 +695,7 @@ function multiPanel(): Panel {
     const label = es.length && ks.length ? t('insp.nFurniture', { n: furn.length })
       : es.length ? (es.length > 1 ? t('insp.nEket', { n: es.length }) : 'EKET')
       : ks.length > 1 ? t('insp.nKallax', { n: ks.length }) : 'Kallax';
-    priceHost.replaceChildren(...(furn.length ? [priceCard(furn, label)] : []));
+    priceHost.replaceChildren(...(furn.length ? [priceCard(furn, gid ? t('group.subtotal') : label)] : []));
     // finish of the selected KALLAX (one undo step for all)
     finishP.el.hidden = !ks.length;
     if (ks.length) {
@@ -711,10 +761,11 @@ export function buildInspector(host: HTMLElement) {
 
   const render = () => {
     const sel = store.selectedItems();
-    const k = sel.length === 0 ? 'none' : sel.length === 1 ? `one:${sel[0].id}:${sel[0].kind}` : 'multi';
+    const gid = sel.length > 1 ? soleGroup(store.selection, store.visibleItems()) : null;
+    const k = sel.length === 0 ? 'none' : sel.length === 1 ? `one:${sel[0].id}:${sel[0].kind}` : `multi:${gid ?? ''}`;
     if (k !== key || !panel) {
       key = k;
-      panel = k === 'none' ? summaryPanel() : k === 'multi' ? multiPanel() : itemPanel(sel[0].id);
+      panel = k === 'none' ? summaryPanel() : k.startsWith('multi') ? multiPanel(gid) : itemPanel(sel[0].id);
       scroll.replaceChildren(panel.el);
       panel.el.classList.add('enter');
       requestAnimationFrame(() => panel?.el.classList.remove('enter'));

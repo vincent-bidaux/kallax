@@ -23,6 +23,8 @@ interface ItemBase {
   /** Extra 90° steps about X and Y (see core/orient.ts). Absent = upright. */
   tilt?: { x: Rotation; y: Rotation };
   layerId: string;
+  /** Group membership (see core/groups.ts). Items sharing a groupId select, move and duplicate together. */
+  groupId?: string;
 }
 
 /** A KALLAX shelving unit: `cols` cells wide × `rows` cells high. Open front and back. */
@@ -114,6 +116,8 @@ export interface DesignDoc {
   basket?: import('./finishes').BasketVariant;
   /** Default colour of every EKET cube (each one can override it). */
   eketFinish?: import('./eket').EketColorId;
+  /** Group names, keyed by groupId (groups themselves = items sharing a groupId). */
+  groups?: Record<string, { name: string }>;
 }
 
 export type ThemeName = 'blueprint' | 'paper';

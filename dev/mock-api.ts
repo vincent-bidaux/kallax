@@ -25,11 +25,15 @@ interface Res {
 
 interface Project { id: string; name: string; createdAt: number; updatedAt: number; items: number; thumb?: string; doc: unknown }
 interface Code { code: string; expires: number; attempts: number; sentAt: number }
+interface Comp { id: string; name: string; data: unknown; thumb?: string; createdAt: number; updatedAt: number }
 
 const MAX_ATTEMPTS = 5;
 const CODE_TTL = 10 * 60_000;
 const RESEND_WINDOW = 25_000; // a little under the client's 30 s countdown
 const MAX_BODY = 2 * 1024 * 1024;
+const MAX_THUMB = 200 * 1024;
+const MAX_COMPONENT = 512 * 1024;
+const MAX_COMPONENTS = 500;
 const ID_RE = /^[A-Za-z0-9_-]{4,64}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@.]+(\.[^\s@.]+)+$/;
 const COOKIE = 'kx_session';
@@ -38,11 +42,17 @@ export function mockApi(opts: { latency?: number } = {}): Plugin {
   const codes = new Map<string, Code>();
   const sessions = new Map<string, string>();               // token → email
   const projects = new Map<string, Map<string, Project>>(); // email → id → project
+  const components = new Map<string, Map<string, Comp>>();  // email → id → component
   const latency = opts.latency ?? 250;
 
   const userProjects = (email: string) => {
     let m = projects.get(email);
     if (!m) { m = new Map(); projects.set(email, m); }
+    return m;
+  };
+  const userComponents = (email: string) => {
+    let m = components.get(email);
+    if (!m) { m = new Map(); components.set(email, m); }
     return m;
   };
   const token = () => Array.from(crypto.getRandomValues(new Uint8Array(24)), b => b.toString(16).padStart(2, '0')).join('');
@@ -163,6 +173,42 @@ export function mockApi(opts: { latency?: number } = {}): Plugin {
         mine.delete(id);
         return json(res, 200, { ok: true });
       }
+    }
+    // ── components (same contract as api/src/index.ts) ──
+    if (path === '/components' || path.startsWith('/components/')) {
+      if (!email) return json(res, 401, { error: 'unauthorized' });
+      const mine = userComponents(email);
+      if (path === '/components') {
+        if (method !== 'GET') return json(res, 405, { error: 'method_not_allowed' });
+        const list = [...mine.values()].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, MAX_COMPONENTS)
+          .map(c => ({ id: c.id, name: c.name, data: c.data, createdAt: c.createdAt, updatedAt: c.updatedAt, ...(c.thumb ? { thumb: c.thumb } : {}) }));
+        return json(res, 200, { components: list });
+      }
+      const id = decodeURIComponent(path.slice('/components/'.length));
+      if (!ID_RE.test(id)) return json(res, 400, { error: 'invalid_id' });
+      if (method === 'PUT') {
+        const { size, data } = await readBody(req);
+        if (size > MAX_COMPONENT + MAX_THUMB || !data) return json(res, size > MAX_COMPONENT ? 413 : 400, { error: size > MAX_COMPONENT ? 'too_large' : 'invalid_body' });
+        const d = data.data as { items?: unknown[] } | undefined;
+        if (!d || !Array.isArray(d.items) || !d.items.length) return json(res, 400, { error: 'invalid_data' });
+        if (JSON.stringify(d).length > MAX_COMPONENT) return json(res, 413, { error: 'too_large' });
+        const prev = mine.get(id);
+        if (!prev && mine.size >= MAX_COMPONENTS) return json(res, 409, { error: 'too_many' });
+        const now = Date.now();
+        const thumb = typeof data.thumb === 'string' && data.thumb.startsWith('data:image/') && data.thumb.length <= MAX_THUMB ? data.thumb : undefined;
+        const createdAt = Number.isFinite(Number(data.createdAt)) && data.createdAt != null ? Math.min(Number(data.createdAt), now) : now;
+        const c: Comp = {
+          id, name: String(data.name || 'Composant').slice(0, 200), data: d,
+          thumb: thumb ?? prev?.thumb, createdAt: prev?.createdAt ?? createdAt, updatedAt: now,
+        };
+        mine.set(id, c);
+        return json(res, 200, { component: { id, name: c.name, createdAt: c.createdAt, updatedAt: now } });
+      }
+      if (method === 'DELETE') {
+        mine.delete(id);
+        return json(res, 200, { ok: true });
+      }
+      return json(res, 405, { error: 'method_not_allowed' });
     }
     return json(res, 404, { error: 'not_found' });
   }

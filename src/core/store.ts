@@ -8,6 +8,7 @@
 import type { DesignDoc, Item, Layer, Settings } from './types';
 import { DEFAULT_SETTINGS } from './types';
 import { t, onBeforeLangSwitch } from './i18n';
+import { expandToGroups, normalizeGroups } from './groups';
 
 export type StoreEvent = 'doc' | 'selection' | 'settings' | 'hover';
 type Listener = (ev: StoreEvent) => void;
@@ -45,6 +46,8 @@ class Store {
   settings: Settings;
   selection: string[] = [];
   hover: string | null = null;
+  /** Group being edited ("entered" by double-click / ⌥-click): its members are selected one by one. */
+  enteredGroup: string | null = null;
 
   private listeners = new Set<Listener>();
   private past: DesignDoc[] = [];
@@ -52,6 +55,8 @@ class Store {
   /** Snapshot taken at the start of a preview gesture. */
   private gestureBase: DesignDoc | null = null;
   private saveTimer = 0;
+  /** Applied to every document that comes in (startup, open, import): e.g. default names → current language. */
+  private importFilter: ((d: DesignDoc) => void) | null = null;
 
   constructor() {
     this.doc = this.load() ?? emptyDoc();
@@ -91,6 +96,7 @@ class Store {
     this.gestureBase = null;
     const next = clone(this.doc);
     mutator(next);
+    normalizeGroups(next);
     this.past.push(base);
     if (this.past.length > 200) this.past.shift();
     this.future = [];
@@ -118,6 +124,7 @@ class Store {
     if (!this.gestureBase) return;
     this.doc = this.gestureBase;
     this.gestureBase = null;
+    this.pruneSelection();
     this.emit('doc');
   }
 
@@ -161,21 +168,57 @@ class Store {
   }
 
   newDoc() {
-    this.update(d => { Object.assign(d, emptyDoc()); });
+    this.update(d => { for (const k of Object.keys(d)) delete (d as unknown as Record<string, unknown>)[k]; Object.assign(d, emptyDoc()); });
+    this.enteredGroup = null;
     this.select([]);
   }
+  /** Install the incoming-document filter and apply it to the document already loaded (no undo step). */
+  setImportFilter(fn: (d: DesignDoc) => void) {
+    this.importFilter = fn;
+    const before = JSON.stringify(this.doc);
+    try { fn(this.doc); } catch (e) { console.error(e); }
+    if (JSON.stringify(this.doc) !== before) this.emit('doc');
+  }
   loadDoc(doc: DesignDoc) {
-    this.update(d => { Object.assign(d, clone(doc)); });
+    const incoming = clone(doc);
+    try { this.importFilter?.(incoming); } catch (e) { console.error(e); }
+    this.update(d => { for (const k of Object.keys(d)) delete (d as unknown as Record<string, unknown>)[k]; Object.assign(d, incoming); });
+    this.enteredGroup = null;
     this.select([]);
   }
 
   // ── selection / hover / settings ───────────────────────────
-  select(ids: string[]) {
-    this.selection = [...new Set(ids)];
+  /**
+   * Select items. Clicking a grouped item selects its whole group (`raw`
+   * skips that, e.g. to pick a member inside the entered group). Selecting
+   * nothing of the entered group leaves it.
+   */
+  select(ids: string[], raw = false) {
+    const vis = this.visibleItems();
+    const next = raw ? [...new Set(ids)] : expandToGroups([...new Set(ids)], vis, this.enteredGroup);
+    if (this.enteredGroup && !next.some(id => this.getItem(id)?.groupId === this.enteredGroup)) this.enteredGroup = null;
+    this.selection = next;
     this.emit('selection');
   }
+  /** ⇧/⌘-click: add or remove an item — or its whole group. */
   toggleSelect(id: string) {
-    this.select(this.selection.includes(id) ? this.selection.filter(s => s !== id) : [...this.selection, id]);
+    const unit = expandToGroups([id], this.visibleItems(), this.enteredGroup);
+    const on = this.selection.includes(id);
+    const set = new Set(unit);
+    this.select(on ? this.selection.filter(s => !set.has(s)) : [...this.selection, ...unit], true);
+  }
+  /** Edit inside a group: select one of its members alone. */
+  enterGroup(gid: string, memberId: string) {
+    this.enteredGroup = gid;
+    this.select([memberId], true);
+  }
+  /** Leave the entered group, selecting the group as a whole. Returns false when no group was entered. */
+  exitGroup(): boolean {
+    const g = this.enteredGroup;
+    if (!g) return false;
+    this.enteredGroup = null;
+    this.select(this.visibleItems().filter(i => i.groupId === g).map(i => i.id), true);
+    return true;
   }
   setHover(id: string | null) {
     if (this.hover === id) return;
@@ -188,6 +231,7 @@ class Store {
   }
 
   private pruneSelection() {
+    if (this.enteredGroup && !this.doc.items.some(i => i.groupId === this.enteredGroup)) this.enteredGroup = null;
     const ids = new Set(this.doc.items.map(i => i.id));
     const pruned = this.selection.filter(s => ids.has(s));
     if (pruned.length !== this.selection.length) { this.selection = pruned; this.emit('selection'); }

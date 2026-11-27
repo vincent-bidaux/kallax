@@ -44,6 +44,17 @@ export function t(key: TKey, params?: Record<string, string | number>): string {
   return fill(dict[key] ?? fr[key] ?? key, params);
 }
 
+/** Translate in a given language (used to recognise default names written in the other language). */
+export function tIn(l: Lang, key: TKey, params?: Record<string, string | number>): string {
+  const d: Record<TKey, string> = l === 'fr' ? fr : en;
+  return fill(d[key] ?? fr[key] ?? key, params);
+}
+/** Both languages. */
+export const LANGS: Lang[] = ['fr', 'en'];
+/** A translator bound to a language (same signature as t). */
+export type Translator = (key: TKey, params?: Record<string, string | number>) => string;
+export const translatorFor = (l: Lang): Translator => (key, params) => tIn(l, key, params);
+
 /** Plural-aware translation: picks `${key}.one` or `${key}.other` for `n` (also passed as `{n}`). */
 export function tn(key: PluralKey, n: number, params?: Record<string, string | number>): string {
   const rule = plurals.select(n);

@@ -32,6 +32,7 @@ export function installKeyboard(hooks: KeyboardHooks) {
       if (kl === 'z' && !e.shiftKey) { handled(); store.undo(); return; }
       if ((kl === 'z' && e.shiftKey) || kl === 'y') { handled(); store.redo(); return; }
       if (kl === 'd') { handled(); cmd.duplicate('x'); return; }
+      if (kl === 'g') { handled(); if (e.shiftKey) cmd.ungroupSelection(); else cmd.groupSelection(); return; }
       if (kl === 'a') { handled(); cmd.selectAll(); return; }
       return;
     }
@@ -44,6 +45,7 @@ export function installKeyboard(hooks: KeyboardHooks) {
         if (cancelActiveDrag() || cancelActiveMove()) { handled(); return; }
         if (ui.insertTool) { handled(); ui.setInsertTool(null); return; }
         closeAllPopovers();
+        if (store.exitGroup()) { handled(); return; }
         if (store.selection.length) { handled(); store.select([]); }
         return;
       case 'Delete':

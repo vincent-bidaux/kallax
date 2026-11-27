@@ -10,6 +10,9 @@ import { openJSON, exportJSON, exportPNG } from './file-io';
 import { newProject, saveProject, openProjectsSheet, onProjectsChange, saveStatus, isDirty } from './projects';
 import { t, lang, setLang, type Lang } from '../core/i18n';
 import { buildAccountButton } from './account';
+import { addSelectionToComponents } from './components';
+import { selectionHasGroups } from '../core/groups';
+import type { MenuItem } from './popover';
 
 export interface ToolbarHooks {
   toggleSidebar(): void;
@@ -138,8 +141,8 @@ export function buildToolbar(host: HTMLElement, hooks: ToolbarHooks) {
   );
 
   // … menu
-  const menu = new Popover(moreBtn, { role: 'menu', cls: 'menu-pop', width: 248, align: 'start' });
-  fillMenu(menu, [
+  const menu = new Popover(moreBtn, { role: 'menu', cls: 'menu-pop', width: 264, align: 'start' });
+  const menuItems = (): MenuItem[] => [
     { label: t('menu.newProject'), icon: 'docNew', action: () => newProject() },
     { label: t('menu.projects'), icon: 'folder', kbd: `${MOD}O`, action: openProjectsSheet },
     { label: t('menu.save'), icon: 'floppy', kbd: `${MOD}S`, action: () => saveProject(), separatorBefore: true },
@@ -147,13 +150,21 @@ export function buildToolbar(host: HTMLElement, hooks: ToolbarHooks) {
     { label: t('menu.importJSON'), icon: 'folder', action: openJSON, separatorBefore: true },
     { label: t('menu.exportJSON'), icon: 'download', action: exportJSON },
     { label: t('menu.exportPNG'), icon: 'photo', action: exportPNG },
+    // Édition: groups + components (state follows the selection)
+    { label: t('group.group'), icon: 'group', kbd: `${MOD}G`, action: () => cmd.groupSelection(), separatorBefore: true, heading: t('menu.edit'),
+      disabled: store.selection.length < 2 },
+    { label: t('group.ungroup'), icon: 'ungroup', kbd: `${SHIFT}${MOD}G`, action: () => cmd.ungroupSelection(),
+      disabled: !selectionHasGroups(store.selection, store.items) },
+    { label: `${t('comp.addTitle')}…`, icon: 'component', action: () => { void addSelectionToComponents(); }, disabled: !store.selection.length },
     { label: t('menu.shortcuts'), icon: 'keyboard', kbd: '?', action: hooks.openShortcuts, separatorBefore: true },
     // Language: two checkable items (labels in their own language, like macOS)
     ...(([['fr', 'Français'], ['en', 'English']] as [Lang, string][]).map(([l, label], i) => ({
       label, lang: l, checked: lang === l, heading: i === 0 ? t('menu.language') : undefined,
       separatorBefore: i === 0, action: () => setLang(l),
     }))),
-  ]);
+  ];
+  fillMenu(menu, menuItems());
+  menu.onOpen = () => { menu.body.replaceChildren(); fillMenu(menu, menuItems()); };
 
   const right = h('div', { class: 'tb-right' },
     h('div', { class: 'tb-group' }, cotesBtn, renduBtn, grilleBtn),

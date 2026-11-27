@@ -7,8 +7,12 @@ import { icon } from './icons';
 import { itemIcon } from './inspector';
 import { button, tip } from './controls';
 import { t, tn } from '../core/i18n';
+import { fullGroups, groupName } from '../core/groups';
+import { renameGroup } from '../interaction/commands';
 
 const expanded = new Set<string>();
+/** Expanded group rows, keyed "layerId:groupId" (groups start collapsed). */
+const expandedGroups = new Set<string>();
 let initialised = false;
 
 function itemDims(it: Item) {
@@ -76,6 +80,12 @@ export function buildLayers(host: HTMLElement) {
   }
 
   function selectItem(e: MouseEvent, it: Item) {
+    // a row inside a group picks that member alone (like double-clicking it in the view)
+    if (it.groupId && !e.shiftKey && !(e.metaKey || e.ctrlKey)) {
+      store.enterGroup(it.groupId, it.id);
+      anchorId = it.id;
+      return;
+    }
     const ordered = store.items.map(i => i.id);
     if (e.shiftKey && anchorId && ordered.includes(anchorId)) {
       const a = ordered.indexOf(anchorId), b = ordered.indexOf(it.id);
@@ -143,11 +153,13 @@ export function buildLayers(host: HTMLElement) {
         list.appendChild(h('div', { class: 'item-row empty', 'aria-hidden': 'true' }, t('layers.noObjects')));
         continue;
       }
-      for (const it of items) {
+      const fullSel = new Set(fullGroups(store.selection, store.visibleItems()));
+      const doneGroups = new Set<string>();
+      const itemRow = (it: Item, level: number) => {
         const nm = h('span', { class: 'item-name' }, it.name);
         const r = h('div', {
-          class: `item-row ${sel.has(it.id) ? 'selected' : ''} ${store.hover === it.id ? 'hovered' : ''}`,
-          role: 'treeitem', tabindex: '0', 'aria-level': '2', 'aria-selected': String(sel.has(it.id)),
+          class: `item-row ${level > 2 ? 'in-group' : ''} ${sel.has(it.id) ? 'selected' : ''} ${store.hover === it.id ? 'hovered' : ''}`,
+          role: 'treeitem', tabindex: '0', 'aria-level': String(level), 'aria-selected': String(sel.has(it.id)),
           dataset: { id: it.id, key: `i:${it.id}` },
         },
           h('span', { class: 'item-glyph' }, icon(itemIcon(it), 13)),
@@ -169,6 +181,50 @@ export function buildLayers(host: HTMLElement) {
           if (e.key === 'F2') { e.preventDefault(); r.dispatchEvent(new MouseEvent('dblclick')); }
         });
         list.appendChild(r);
+      };
+      for (const it of items) {
+        if (!it.groupId) { itemRow(it, 2); continue; }
+        const gid = it.groupId;
+        if (doneGroups.has(gid)) continue;
+        doneGroups.add(gid);
+        const members = items.filter(i => i.groupId === gid);
+        const gkey = `${layer.id}:${gid}`;
+        const gopen = expandedGroups.has(gkey);
+        const gname = groupName(doc, gid);
+        const gsel = fullSel.has(gid);
+        const gdisc = h('button', { type: 'button', class: `disclosure ${gopen ? 'open' : ''}`, 'aria-label': gopen ? t('layers.collapse') : t('layers.expand'), tabindex: '-1' }, icon('chevronRight', 11));
+        gdisc.addEventListener('click', (e) => { e.stopPropagation(); gopen ? expandedGroups.delete(gkey) : expandedGroups.add(gkey); render(); });
+        const gnm = h('span', { class: 'item-name' }, gname);
+        const gr = h('div', {
+          class: `item-row group-row-l ${gsel ? 'selected' : ''} ${store.enteredGroup === gid ? 'entered' : ''}`,
+          role: 'treeitem', tabindex: '0', 'aria-level': '2', 'aria-expanded': String(gopen), 'aria-selected': String(gsel),
+          dataset: { gid, key: `g:${gkey}` },
+        }, gdisc, h('span', { class: 'item-glyph' }, icon('group', 13)), gnm,
+          h('span', { class: 'item-dims' }, tn('comp.items', members.length)));
+        tip(gr, t('layers.groupTip'));
+        gr.addEventListener('click', (e) => {
+          const ids = store.visibleItems().filter(i => i.groupId === gid).map(i => i.id);
+          if (e.metaKey || e.ctrlKey || e.shiftKey) {
+            const allOn = ids.every(id => store.selection.includes(id));
+            store.select(allOn ? store.selection.filter(x => !ids.includes(x)) : [...store.selection, ...ids], true);
+          } else { store.enteredGroup = null; store.select(ids, true); }
+        });
+        gr.addEventListener('pointerenter', () => store.setHover(members[0].id));
+        gr.addEventListener('pointerleave', () => { if (store.hover === members[0].id) store.setHover(null); });
+        gr.addEventListener('dblclick', (e) => {
+          e.preventDefault();
+          renaming = true;
+          inlineRename(gnm, gname, v => { renaming = false; renameGroup(gid, v); }, () => { renaming = false; if (dirty) render(); });
+        });
+        gr.addEventListener('keydown', (e) => {
+          if (e.target !== gr) return;
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); gr.click(); }
+          if (e.key === 'ArrowRight' && !gopen) { e.preventDefault(); expandedGroups.add(gkey); render(); }
+          if (e.key === 'ArrowLeft' && gopen) { e.preventDefault(); expandedGroups.delete(gkey); render(); }
+          if (e.key === 'F2') { e.preventDefault(); gr.dispatchEvent(new MouseEvent('dblclick')); }
+        });
+        list.appendChild(gr);
+        if (gopen) for (const m of members) itemRow(m, 3);
       }
     }
     // roving-ish arrow navigation
@@ -185,7 +241,9 @@ export function buildLayers(host: HTMLElement) {
   });
 
   const patchHover = () => {
+    const hg = store.hover ? store.getItem(store.hover)?.groupId : undefined;
     for (const r of list.querySelectorAll<HTMLElement>('.item-row[data-id]')) r.classList.toggle('hovered', r.dataset.id === store.hover);
+    for (const r of list.querySelectorAll<HTMLElement>('.item-row[data-gid]')) r.classList.toggle('hovered', !!hg && r.dataset.gid === hg);
   };
   const patchSelection = () => {
     const sel = new Set(store.selection);
@@ -194,9 +252,19 @@ export function buildLayers(host: HTMLElement) {
       r.classList.toggle('selected', on);
       r.setAttribute('aria-selected', String(on));
     }
-    // reveal selected rows in collapsed layers
+    const full = new Set(fullGroups(store.selection, store.visibleItems()));
+    for (const r of list.querySelectorAll<HTMLElement>('.item-row[data-gid]')) {
+      const on = full.has(r.dataset.gid!);
+      r.classList.toggle('selected', on);
+      r.classList.toggle('entered', store.enteredGroup === r.dataset.gid);
+      r.setAttribute('aria-selected', String(on));
+    }
+    // reveal selected rows in collapsed layers (and members picked inside a group)
     let changed = false;
-    for (const it of store.selectedItems()) if (!expanded.has(it.layerId)) { expanded.add(it.layerId); changed = true; }
+    for (const it of store.selectedItems()) {
+      if (!expanded.has(it.layerId)) { expanded.add(it.layerId); changed = true; }
+      if (it.groupId && store.enteredGroup === it.groupId && !expandedGroups.has(`${it.layerId}:${it.groupId}`)) { expandedGroups.add(`${it.layerId}:${it.groupId}`); changed = true; }
+    }
     if (changed) render();
     list.querySelector<HTMLElement>('.item-row.selected')?.scrollIntoView({ block: 'nearest' });
   };
