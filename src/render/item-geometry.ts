@@ -9,6 +9,7 @@ import type { InsertType } from '../core/types';
 import type { Item, Size3 } from '../core/types';
 import { buildChair } from './furniture-chairs';
 import { buildDesk } from './furniture-desks';
+import { buildFrame, buildTable, buildTv } from './furniture-params';
 import { buildBed, buildLamp, buildPlant } from './furniture-objects';
 import { buildEket } from './eket-geometry';
 import { EKET_LEG_BY_ID, eketDef } from '../core/eket';
@@ -69,6 +70,9 @@ export function geometryKey(item: Item, holes?: WallHole[]): string {
     case 'plant': return `plant:${item.variant ?? ''}:${s.w}x${s.d}x${s.h}`;
     case 'desk': return `desk:${item.variant ?? ''}:${s.w}x${s.d}x${s.h}`;
     case 'chair': return `chair:${item.variant ?? ''}:${s.w}x${s.d}x${s.h}`; // colour = material, not geometry
+    case 'tv': return `tv:${item.variant ?? ''}:${item.opts?.inch ?? ''}:${s.w}x${s.d}x${s.h}`;
+    case 'table': return `table:${item.variant ?? ''}:${item.opts?.top ?? ''}:${item.opts?.leg ?? ''}:${item.opts?.round ? 'R' : ''}:${s.w}x${s.d}x${s.h}`;
+    case 'frame': return `frame:${item.variant ?? ''}:${s.w}x${s.d}x${s.h}`;
     default: return `b${s.w}x${s.d}x${s.h}`; // box, square beam, skirting
   }
 }
@@ -88,6 +92,9 @@ function buildFor(key: string, item: Item, holes?: WallHole[]): ItemGeometry {
     case 'plant': return buildPlant(key, s, item.variant);
     case 'desk': return buildDesk(key, s, item.variant);
     case 'chair': return buildChair(key, s, item.variant);
+    case 'tv': return buildTv(key, s, item.variant, item.opts);
+    case 'table': return buildTable(key, s, item.variant, item.opts);
+    case 'frame': return buildFrame(key, s, item.variant);
     default: return buildBlock(key, s);
   }
 }

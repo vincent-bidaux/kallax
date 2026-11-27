@@ -6,6 +6,7 @@ import { computePlacement, freeSpot, itemsFree, type PlaceResult } from './place
 import { h, toast } from '../ui/dom';
 import { t, DECIMAL } from '../core/i18n';
 import { worldSize } from '../core/kallax';
+import { itemBaseZ } from '../ui/object-labels';
 
 /** True when (x, y) is over the 3D canvas itself (not over an overlay widget such as the ViewCube). */
 export function overCanvas(x: number, y: number): boolean {
@@ -39,6 +40,7 @@ export function beginLibraryDrag(e: PointerEvent, source: HTMLElement, make: () 
       const it = make();
       it.layerId = store.doc.activeLayerId;
       it.position = freeSpot(it);
+      if (it.kind === 'block') it.position = { ...it.position, z: it.position.z + itemBaseZ(it) };
       store.addItem(it);
       ui.viewport.zoomToFit(true);
     },
@@ -126,6 +128,7 @@ function beginDrag(e: PointerEvent, source: HTMLElement, spec: DragSpec) {
     }
     last = res;
     if (res) {
+      if (res.rotation !== undefined) item.rotation = res.rotation; // wall-hung: back to the wall
       item.position = res.position;
       ui.viewport.setGhost({ item: { ...item, position: { ...res.position } } as Item, valid: res.valid });
       ui.setSnap(res.label);

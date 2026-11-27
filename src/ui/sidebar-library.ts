@@ -3,7 +3,7 @@ import { CATALOG, IKEA_LINKS, INSERTS, KALLAX, fmtCm, kallaxOuter, cylinderSize,
 import type { InsertType } from '../core/types';
 import type { InsertTool } from '../interaction/context';
 import { store, uid } from '../core/store';
-import type { BlockItem, BlockShape, EketItem, Item, KallaxItem } from '../core/types';
+import type { BlockItem, BlockShape, EketItem, Item, KallaxItem, ObjOpts } from '../core/types';
 import { EKET, EKET_LINKS, EKET_VARIANTS, eketDef, eketDims, eketDisplayName, eketMinPrice, type EketVariant } from '../core/eket';
 import { h, svg } from './dom';
 import { numberField, segmented, switchRow, tip } from './controls';
@@ -11,7 +11,11 @@ import { icon } from './icons';
 import { INSERT_NAMES, fmtEur, fmtEurShort, frameMinPrice, insertMinPrice } from '../core/finishes';
 import { t, locale, type TKey } from '../core/i18n';
 import { OBJECT_DEFS, OBJECT_GROUPS, OBJECT_BY_SHAPE, colorOf, variantOf, type ObjectGroup } from '../core/objects';
-import { autoName, baseZOf, colorLabel, objLabel } from './object-labels';
+import { autoName, colorLabel, fmtInch, itemBaseZ, objLabel } from './object-labels';
+import { paramEditor, type ParamEditor, type ParamTarget } from './param-editor';
+import {
+  frameOpening, isParamShape, paramDefaults, syncParam, tableStyle, tvInch,
+} from '../core/objects-params';
 import { colorPicker, variantNote, variantPicker } from './variant-picker';
 import { beginLibraryDrag } from '../interaction/drag-drop';
 import { freeSpot } from '../interaction/placement';
@@ -66,7 +70,7 @@ function makeKallax(e: CatalogEntry): KallaxItem {
 
 function insertAtFreeSpot(it: Item) {
   it.position = freeSpot(it);
-  if (it.kind === 'block') it.position = { ...it.position, z: it.position.z + baseZOf(it.shape) };
+  if (it.kind === 'block') it.position = { ...it.position, z: it.position.z + itemBaseZ(it) };
   store.addItem(it);
   ui.viewport.zoomToFit(true);
 }
@@ -275,12 +279,15 @@ interface Draft {
   name?: string;
   /** Colour option id (variants with `colors`). */
   color?: string;
+  /** Parametric objects (TV, custom table, frame). */
+  opts?: ObjOpts;
 }
 
 const TYPE_TIPS: Partial<Record<BlockShape, TKey>> = {
   box: 'obj.brickTip', cylinder: 'obj.roundTip', square: 'obj.squareTip',
   wall: 'obj.wallTip', window: 'obj.windowTip', door: 'obj.doorTip', skirting: 'obj.skirtingTip', radiator: 'obj.radiatorTip',
   bed: 'obj.bedTip', lamp: 'obj.lampTip', plant: 'obj.plantTip', desk: 'obj.deskTip', chair: 'obj.chairTip',
+  tv: 'obj.tvTip', table: 'obj.tableTip', frame: 'obj.frameTip',
 };
 
 const WINDOW_PRESETS = [
@@ -293,11 +300,40 @@ const isBeam = (s: BlockShape) => s === 'cylinder' || s === 'square';
 const LS_NEW_COLLIDE = 'kallax-designer:new-collide';
 
 function buildObjectGroups(): HTMLElement[] {
-  const drafts = Object.fromEntries(OBJECT_DEFS.map(def => [def.shape, {
-    w: def.size.w, d: def.size.d, h: def.size.h,
-    dia: def.size.h, len: def.size.w, axis: 'x',
-    variant: def.defaultVariant, mirror: false,
-  } satisfies Draft])) as Record<BlockShape, Draft>;
+  const drafts = Object.fromEntries(OBJECT_DEFS.map(def => {
+    const pd = isParamShape(def.shape) ? paramDefaults(def.shape) : null;
+    const sz = pd?.size ?? def.size;
+    return [def.shape, {
+      w: sz.w, d: sz.d, h: sz.h,
+      dia: def.size.h, len: def.size.w, axis: 'x',
+      variant: pd?.variant ?? def.defaultVariant, mirror: false, opts: pd?.opts ? { ...pd.opts } : undefined,
+    } satisfies Draft];
+  })) as Record<BlockShape, Draft>;
+  // parametric objects: one editor per type, working on the draft
+  const paramState = (shape: BlockShape): ParamTarget => {
+    const o = drafts[shape];
+    return { shape, variant: o.variant, size: { w: o.w, d: o.d, h: o.h }, opts: o.opts ? { ...o.opts } : undefined, color: o.color };
+  };
+  const paramEds = new Map<BlockShape, ParamEditor>();
+  const paramEd = (shape: BlockShape & ('tv' | 'table' | 'frame')): ParamEditor => {
+    let ed = paramEds.get(shape);
+    if (!ed) {
+      ed = paramEditor(shape, {
+        cls: 'lib-param',
+        change: m => {
+          const st = paramState(shape);
+          m(st);
+          syncParam(st);
+          const o = drafts[shape];
+          o.variant = st.variant; o.w = st.size.w; o.d = st.size.d; o.h = st.size.h; o.opts = st.opts; o.color = st.color;
+          paramEds.get(shape)!.set(paramState(shape));
+          updateTile();
+        },
+      });
+      paramEds.set(shape, ed);
+    }
+    return ed;
+  };
   let active: BlockShape = 'box';
 
   // shared editor (parameters + draggable tile), moved under the active group's type row
@@ -319,7 +355,7 @@ function buildObjectGroups(): HTMLElement[] {
   collideSw.el.classList.add('lib-collide');
   const editor = h('div', { class: 'obj-editor' }, params, collideSw.el, objTile);
 
-  const nameOf = (shape: BlockShape) => drafts[shape].name ?? autoName(shape, drafts[shape].variant);
+  const nameOf = (shape: BlockShape) => drafts[shape].name ?? autoName(shape, drafts[shape].variant, undefined, drafts[shape].opts);
 
   const makeObject = (): BlockItem => {
     const shape = active, o = drafts[shape];
@@ -331,7 +367,11 @@ function buildObjectGroups(): HTMLElement[] {
     if (isBeam(shape)) { it.axis = o.axis; it.size = cylinderSize(o.dia, o.len, o.axis); }
     else if (shape === 'wall') it.size = { w: o.w, d: 0, h: o.h };
     const v = variantOf(shape, o.variant);
-    if (v && OBJECT_BY_SHAPE[shape].variants) { it.variant = v.id; it.size = { ...v.size }; }
+    if (isParamShape(shape)) {
+      it.variant = o.variant;
+      if (o.opts) it.opts = { ...o.opts };
+      syncParam(it);
+    } else if (v && OBJECT_BY_SHAPE[shape].variants) { it.variant = v.id; it.size = { ...v.size }; }
     const c = colorOf(shape, o.variant, o.color);
     if (c) it.color = c.id;
     if (shape === 'door' && o.mirror) it.mirror = true;
@@ -362,7 +402,11 @@ function buildObjectGroups(): HTMLElement[] {
   const renderParams = () => {
     const shape = active, o = drafts[shape], def = OBJECT_BY_SHAPE[shape];
     const nodes: Node[] = [];
-    if (isBeam(shape)) {
+    if (isParamShape(shape)) {
+      const ed = paramEd(shape);
+      ed.set(paramState(shape));
+      nodes.push(ed.el);
+    } else if (isBeam(shape)) {
       const sq = shape === 'square';
       nodes.push(h('div', { class: 'fields-2' },
         num(sq ? '□' : 'Ø', sq ? t('aria.sectionSide') : t('aria.diameter'), o.dia, v => o.dia = v, { step: 0.5 }),
@@ -417,9 +461,16 @@ function buildObjectGroups(): HTMLElement[] {
       else preview.replaceChildren(icon(def.icon, 40));
     } else {
       const v = def.variants ? variantOf(shape, o.variant) : undefined;
-      const s = v ? v.size : { w: o.w, d: o.d, h: o.h };
+      const s = v && !isParamShape(shape) ? v.size : { w: o.w, d: o.d, h: o.h };
       dims = shape === 'wall' ? `${fmtCm(s.w)} × ${fmtCm(s.h)} cm` : `${fmtCm(s.w)} × ${fmtCm(s.d)} × ${fmtCm(s.h)} cm`;
-      if (shape === 'window') extra = t('obj.sill');
+      if (isParamShape(shape)) {
+        const st = paramState(shape);
+        const bits: string[] = [];
+        if (shape === 'tv') bits.push(fmtInch(tvInch(st)), t(v?.labelKey as TKey));
+        else if (shape === 'table') bits.push(t(`obj.table.${tableStyle(st)}` as TKey), st.opts?.round ? t('obj.table.roundShort', { d: fmtCm(st.size.w) }) : '', colorLabel(shape, v?.id, o.color));
+        else { const op = frameOpening(st); bits.push(t('obj.frame.opening', { w: fmtCm(op.w), h: fmtCm(op.h) }), colorLabel(shape, v?.id, o.color)); }
+        extra = bits.filter(Boolean).join(' · ');
+      } else if (shape === 'window') extra = t('obj.sill');
       else if (shape === 'door') extra = o.mirror ? t('obj.handleLeftLong') : t('obj.handleRightLong');
       else if (def.baseZ) extra = t('obj.aboveFloor', { cm: fmtCm(def.baseZ) });
       else if (v) extra = [variantNote(v), colorLabel(shape, v.id, o.color)].filter(Boolean).join(' · ');
@@ -467,7 +518,7 @@ function buildObjectGroups(): HTMLElement[] {
     });
     const sec = h('section', { class: `panel-section obj-group obj-group-${g.id}` },
       h('div', { class: 'section-head' }, h('h3', { class: 'section-title' }, title.toLocaleUpperCase(locale))),
-      h('div', { class: 'obj-types', role: 'radiogroup', 'aria-label': t('obj.typeAria', { group: title }), style: `--n:${Math.max(defs.length, 3)}` }, btns));
+      h('div', { class: 'obj-types', role: 'radiogroup', 'aria-label': t('obj.typeAria', { group: title }), style: `--n:${defs.length > 5 ? Math.ceil(defs.length / 2) : Math.max(defs.length, 3)}` }, btns));
     sections.set(g.id, sec);
     out.push(sec);
   }

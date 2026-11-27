@@ -1,7 +1,12 @@
 // Translated labels / default names of catalogue objects (core/objects.ts).
 import { OBJECT_BY_SHAPE, colorOf, variantOf } from '../core/objects';
-import type { BlockItem, BlockShape } from '../core/types';
+import type { BlockItem, BlockShape, Item, ObjOpts } from '../core/types';
 import { t, locale, type TKey, type Translator } from '../core/i18n';
+import { isWallHung, tvInch, wallHungBaseZ } from '../core/objects-params';
+import { fmtCm } from '../core/kallax';
+
+/** Screen diagonal label: 55″. */
+export const fmtInch = (v: number) => `${fmtCm(v)}\u2033`;
 
 /** Lower-case the first letter, unless the first word is an acronym / IKEA name ("GRÖNSTA", "LACK"). */
 const lower = (s: string) => {
@@ -39,7 +44,8 @@ export function colorLabel(shape: BlockShape | undefined, variant: string | unde
  * Default item name: the variant's own name when it has one ("Lampadaire arc",
  * "Bureau MICKE"), else type label + variant ("Lit double 140" / "Double 140 bed").
  */
-export function autoName(shape: BlockShape | undefined, variant?: string, tr: Translator = t): string {
+export function autoName(shape: BlockShape | undefined, variant?: string, tr: Translator = t, opts?: ObjOpts): string {
+  if (shape === 'tv') return tr('obj.tv.name', { inch: fmtInch(tvInch({ opts })) });
   const own = shape ? variantOf(shape, variant)?.nameKey : undefined;
   if (own) return tr(own as TKey);
   const type = objLabel(shape, tr);
@@ -52,12 +58,23 @@ export function autoName(shape: BlockShape | undefined, variant?: string, tr: Tr
 
 /** Default name of an item, given its current shape / variant. */
 export function isAutoName(it: BlockItem, name = it.name): boolean {
-  return name === autoName(it.shape, it.variant) || name === objLabel(it.shape);
+  return name === autoName(it.shape, it.variant, t, it.opts) || name === objLabel(it.shape);
 }
 
 /** Base height of an object dropped on the floor (window sill, radiator…). */
 export function baseZOf(shape: BlockShape | undefined): number {
   return (shape && OBJECT_BY_SHAPE[shape]?.baseZ) || 0;
+}
+
+/** Base height of a NEW item dropped on the floor: wall-hung objects at their default height (frame centre 150, wall TV 115), else baseZOf. */
+export function itemBaseZ(it: Item): number {
+  if (it.kind !== 'block') return 0;
+  return wallHungBaseZ(it) ?? baseZOf(it.shape);
+}
+
+/** Item version of standsOnFloor: wall-hung objects (frames, wall TV) hang where the pointer is. */
+export function itemStandsOnFloor(it: Item): boolean {
+  return it.kind === 'block' && !isWallHung(it) && standsOnFloor(it.shape);
 }
 
 /** Objects that stand on the floor even when dropped against a wall face. */

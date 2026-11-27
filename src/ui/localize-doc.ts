@@ -55,7 +55,7 @@ export function localizeDoc(d: DesignDoc): void {
       const label = tIn(other, `eket.v.${camel(it.variant)}` as TKey);
       if (it.name === tIn(other, 'eket.name', { variant: label })) it.name = eketDisplayName(it.variant);
     } else {
-      if (it.name === autoName(it.shape, it.variant, tr)) it.name = autoName(it.shape, it.variant);
+      if (it.name === autoName(it.shape, it.variant, tr, it.opts)) it.name = autoName(it.shape, it.variant, undefined, it.opts);
       else if (it.name === objLabel(it.shape, tr)) it.name = objLabel(it.shape);
       else if (it.name === tIn(other, 'preset.frenchWindow')) it.name = t('preset.frenchWindow');
       else {

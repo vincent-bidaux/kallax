@@ -79,7 +79,8 @@ export function faceSetOf(item: Item): FaceSet {
   if (item.kind === 'kallax' || item.kind === 'eket') return 'kallax';
   switch (item.shape) {
     case 'wall': return 'wall';
-    case 'door': case 'skirting': case 'radiator': case 'bed': case 'lamp': case 'plant': case 'chair': case 'desk': return 'plain';
+    case 'door': case 'skirting': case 'radiator': case 'bed': case 'lamp': case 'plant': case 'chair': case 'desk':
+    case 'tv': case 'table': case 'frame': return 'plain';
     default: return 'block'; // box, beams, window
   }
 }

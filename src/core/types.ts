@@ -70,6 +70,20 @@ export interface BlockItem extends ItemBase {
    * overlap anything and anything may overlap it (magnetic snapping unchanged).
    */
   collide?: false;
+  /** Parameters of parametric objects (TV, custom table, frame — see core/objects-params.ts). */
+  opts?: ObjOpts;
+}
+
+/** Parameters of parametric objects (core/objects-params.ts). Sizes in cm. */
+export interface ObjOpts {
+  /** TV: screen diagonal in inches (16:9). */
+  inch?: number;
+  /** Table: top thickness. */
+  top?: number;
+  /** Table: leg section (side / Ø; pedestal column Ø; hairpin rod Ø). */
+  leg?: number;
+  /** Table: round top (Ø = width, depth = width). */
+  round?: boolean;
 }
 
 /**
@@ -88,12 +102,14 @@ export interface EketItem extends ItemBase {
 
 /**
  * Block shapes. Blocks: 'box' (brique), 'cylinder' (round beam), 'square' (square beam).
- * House: 'wall', 'window', 'door', 'skirting', 'radiator'. Objects: 'bed', 'lamp', 'plant'.
+ * House: 'wall', 'window', 'door', 'skirting', 'radiator'. Objects: 'bed', 'lamp', 'plant',
+ * 'desk', 'chair' and the parametric 'tv', 'table', 'frame'.
  */
 export type BlockShape =
   | 'box' | 'cylinder' | 'square'
   | 'wall' | 'window' | 'door' | 'skirting' | 'radiator'
-  | 'bed' | 'lamp' | 'plant' | 'desk' | 'chair';
+  | 'bed' | 'lamp' | 'plant' | 'desk' | 'chair'
+  | 'tv' | 'table' | 'frame';
 
 export type Item = KallaxItem | BlockItem | EketItem;
 

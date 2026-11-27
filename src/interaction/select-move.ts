@@ -2,7 +2,7 @@
 // Listeners run in the CAPTURE phase on the viewport container so they
 // fire before OrbitControls (which then never sees a press on an item).
 import type { ViewportAPI } from '../core/contracts';
-import type { Item, Vec3 } from '../core/types';
+import type { Item, Rotation, Vec3 } from '../core/types';
 import { store } from '../core/store';
 import { ui } from './context';
 import { computePlacement, itemsFree } from './placement';
@@ -93,6 +93,13 @@ export function installSelectMove(vp: ViewportAPI) {
     if (!g) return;
     const res = computePlacement({ item: g.primary, clientX: ev.clientX, clientY: ev.clientY, ignoreIds: g.ids, grab: g.grab, keepHeight: g.orig.get(g.primary.id)?.z ?? g.primary.position.z });
     if (!res) return;
+    // wall-hung item (frame, wall TV) moved onto another wall face: turned back to the wall
+    let turn: Rotation | undefined;
+    if (res.rotation !== undefined && g.ids.length === 1) {
+      turn = res.rotation;
+      g.primary = { ...g.primary, rotation: res.rotation } as Item;
+      if (res.grab) g.grab = res.grab;
+    }
     const p0 = g.orig.get(g.primary.id)!;
     let d = { x: res.position.x - p0.x, y: res.position.y - p0.y, z: res.position.z - p0.z };
     // keep the whole group above the floor
@@ -103,6 +110,7 @@ export function installSelectMove(vp: ViewportAPI) {
       for (const it of doc.items) if (ids.has(it.id)) {
         const o = g!.orig.get(it.id)!;
         it.position = { x: o.x + d.x, y: o.y + d.y, z: o.z + d.z };
+        if (turn !== undefined) it.rotation = turn;
       }
     });
     const moved = store.items.filter(i => ids.has(i.id));

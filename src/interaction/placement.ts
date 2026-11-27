@@ -4,9 +4,11 @@
 //  3. magnetic snap to other items' faces (flush or aligned) — wins over grid
 //  4. validity: no AABB overlap with other visible items, z ≥ 0 — items whose
 //     "Collisions" switch is off neither block nor are blocked (core/kallax collides)
-import type { Item, Vec3 } from '../core/types';
+import type { Item, Rotation, Vec3 } from '../core/types';
 import { boxesOverlap, collides, itemBox, unionBox, worldSize, type Box3 } from '../core/kallax';
-import { baseZOf, standsOnFloor } from '../ui/object-labels';
+import { itemBaseZ, itemStandsOnFloor } from '../ui/object-labels';
+import { isWallHung } from '../core/objects-params';
+import { isUpright } from '../core/orient';
 import { store } from '../core/store';
 import { ui } from './context';
 import { fmtCm } from '../core/kallax';
@@ -32,6 +34,13 @@ export interface PlaceResult {
   guides: SnapGuide[];
   /** Short description for the status bar (current UI language). */
   label: string | null;
+  /**
+   * Wall-hung items (frames, wall TV) dropped on a wall face are turned to
+   * face away from it: the new rotation about Z when it differs from the
+   * item's, with the grab point to use from now on (callers apply both).
+   */
+  rotation?: Rotation;
+  grab?: Vec3;
 }
 
 export interface PlaceOpts {
@@ -180,18 +189,65 @@ function defaultGrab(item: Item, s: { w: number; d: number }): Vec3 {
   return g;
 }
 
+/**
+ * Rotation about Z that turns an item's front (local −Y) along a wall face's
+ * outward normal, i.e. its back (local +Y) against the wall:
+ * −Y → 0, +X → 90, +Y → 180, −X → 270.
+ */
+export function rotationFacing(n: Vec3): Rotation {
+  if (Math.abs(n.x) > Math.abs(n.y)) return n.x > 0 ? 90 : 270;
+  return n.y > 0 ? 180 : 0;
+}
+
+/** The wall whose face a wall-hung item's back lies on (face normal `n` = the item's front), if any. */
+function wallBehind(it: Item, n: Vec3, candidates: Item[]): Item | null {
+  const b = itemBox(it);
+  const ax: Axis = Math.abs(n.x) > 0.5 ? 'x' : 'y', other: Axis = ax === 'x' ? 'y' : 'x';
+  const plane = (n[ax] > 0 ? b.min : b.max)[ax];
+  for (const w of candidates) {
+    if (w.kind !== 'block' || w.shape !== 'wall') continue;
+    const wb = itemBox(w);
+    if (Math.abs(wb.min[ax] - plane) > 0.05 || Math.abs(wb.max[ax] - plane) > 0.05) continue;
+    if (wb.max[other] < b.min[other] || wb.min[other] > b.max[other] || wb.max.z < b.min.z || wb.min.z > b.max.z) continue;
+    return w;
+  }
+  return null;
+}
+
 export function computePlacement(o: PlaceOpts): PlaceResult | null {
   const vp = ui.viewport;
-  const { item, clientX: cx, clientY: cy } = o;
-  const s = worldSize(item);
-  const size: Record<Axis, number> = { x: s.w, y: s.d, z: s.h };
-  const grab = o.grab ?? defaultGrab(item, s);
+  const { clientX: cx, clientY: cy } = o;
+  let item = o.item;
   const ignore = new Set(o.ignoreIds);
   const others = store.visibleItems().filter(i => !ignore.has(i.id));
   const settings = store.settings;
 
   const hit = vp.raycastSurface(cx, cy, o.ignoreIds);
-  const hitItem = hit?.itemId ? store.getItem(hit.itemId) ?? null : null;
+  let hitItem = hit?.itemId ? store.getItem(hit.itemId) ?? null : null;
+  // a wall-hung item over another one (frame over a frame): use the wall behind it
+  if (hit && hitItem && isWallHung(item) && isWallHung(hitItem) && Math.abs(hit.normal.z) < 0.5) {
+    const w = wallBehind(hitItem, hit.normal, others);
+    if (w) {
+      const ax = Math.abs(hit.normal.x) > 0.5 ? 'x' : 'y';
+      hit.point = { ...hit.point, [ax]: itemBox(w).min[ax] };
+      hitItem = w;
+    }
+  }
+
+  // wall-hung items over a wall face: back to the wall (turned if needed)
+  let turned: Rotation | undefined;
+  let grabIn = o.grab;
+  if (hit && hitItem && hitItem.kind === 'block' && hitItem.shape === 'wall' && Math.abs(hit.normal.z) < 0.5 && isWallHung(item) && isUpright(item)) {
+    const r = rotationFacing(hit.normal);
+    if (r !== item.rotation) {
+      item = { ...item, rotation: r } as Item;
+      turned = r;
+      if (grabIn) { const s2 = worldSize(item); grabIn = { x: s2.w / 2, y: s2.d / 2, z: grabIn.z }; }
+    }
+  }
+  const s = worldSize(item);
+  const size: Record<Axis, number> = { x: s.w, y: s.d, z: s.h };
+  const grab = grabIn ?? defaultGrab(item, s);
 
   const pos: Vec3 = { x: 0, y: 0, z: 0 };
   const locked: Record<Axis, boolean> = { x: false, y: false, z: true };
@@ -220,7 +276,7 @@ export function computePlacement(o: PlaceOpts): PlaceResult | null {
       pos.z = hb.min.z;
       locked.z = false;
       // against a wall: hang the item where the pointer is (height follows the cursor)
-      if (hitItem.kind === 'block' && hitItem.shape === 'wall' && item.kind === 'block' && standsOnFloor(item.shape)) {
+      if (hitItem.kind === 'block' && hitItem.shape === 'wall' && itemStandsOnFloor(item)) {
         // doors, skirtings, beds… stand on the floor at the foot of the wall (not "hung")
         pos.z = hb.min.z;
         locked.z = true;
@@ -246,7 +302,7 @@ export function computePlacement(o: PlaceOpts): PlaceResult | null {
 
   // catalogue base height on the floor: window sill ("allège") 90, radiator 15…
   // default base height (window sill, radiator) only for NEW items; moved items keep theirs
-  if (item.kind === 'block' && surface === 'ground' && o.keepHeight === undefined) pos.z += baseZOf(item.shape);
+  if (item.kind === 'block' && surface === 'ground' && o.keepHeight === undefined) pos.z += itemBaseZ(item);
 
   // ── reach guard: near the horizon (perspective / grazing views) the pointer ray
   // meets the floor hundreds of metres away. Refuse such positions instead of
@@ -313,6 +369,7 @@ export function computePlacement(o: PlaceOpts): PlaceResult | null {
   return {
     position: pos, valid, surface, guides,
     label: describeGuides(guides, surface, hitItem?.id ?? null),
+    ...(turned !== undefined ? { rotation: turned, grab: grabIn } : {}),
   };
 }
 

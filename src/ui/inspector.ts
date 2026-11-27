@@ -14,7 +14,9 @@ import * as cmd from '../interaction/commands';
 import { MOD } from './dom';
 import { t, tn, type TKey } from '../core/i18n';
 import { OBJECT_BY_SHAPE, colorOf, variantOf } from '../core/objects';
-import { autoName, groupLabel, isAutoName, objLabel, variantLabel } from './object-labels';
+import { autoName, fmtInch, groupLabel, isAutoName, objLabel, variantLabel } from './object-labels';
+import { paramEditor, type ParamEditor } from './param-editor';
+import { frameOpening, isParamShape, isWallHung, keepWallAnchor, syncParam, tableStyle, tvInch } from '../core/objects-params';
 import { colorPicker, productLink, variantNote, variantPicker, type ColorPicker, type VariantPicker } from './variant-picker';
 import { collisionBoxes } from '../interaction/placement';
 import { groupName, soleGroup, selectionHasGroups } from '../core/groups';
@@ -215,6 +217,7 @@ function itemPanel(id: string): Panel {
   let handleSeg: ReturnType<typeof segmented<'r' | 'l'>> | null = null;
   let variantPick: VariantPicker | null = null;
   let colorP: ColorPicker | null = null;
+  let paramEd: ParamEditor | null = null;
   const variantNoteEl = h('p', { class: 'hint variant-note' });
   const linkHost = h('div', { class: 'product-link-row' });
   if (it0.kind === 'kallax') {
@@ -307,6 +310,30 @@ function itemPanel(id: string): Panel {
     fw = numberField({ label: t('dim.w'), axis: 'x', ariaLabel: t('aria.width'), value: it0.size.w, step: 1, min: 1, suffix: 'cm', onCommit: v => patchSize('w', v) });
     fh = numberField({ label: t('dim.h'), axis: 'z', ariaLabel: t('aria.height'), value: it0.size.h, step: 1, min: 1, suffix: 'cm', onCommit: v => patchSize('h', v) });
     sizeGroup = group(t('insp.wallPlane'), h('div', { class: 'fields-2' }, fw.el, fh.el));
+  } else if (isParamShape(it0.shape)) {
+    // parametric objects (TV, custom table, frame): one store.update per edit (undoable), size re-derived
+    paramEd = paramEditor(it0.shape, {
+      cls: 'insp-param',
+      change: m => {
+        const cur = store.getItem(id);
+        if (!cur || cur.kind !== 'block' || store.isLocked(cur)) return;
+        const before = JSON.stringify([cur.variant, cur.size, cur.opts, cur.color]);
+        const probe = structuredClone(cur);
+        m(probe); syncParam(probe);
+        if (JSON.stringify([probe.variant, probe.size, probe.opts, probe.color]) === before) return;
+        store.update(d => {
+          const x = d.items.find(i => i.id === id);
+          if (!x || x.kind !== 'block') return;
+          const wasAuto = isAutoName(x);
+          const before = { size: { ...x.size }, rotation: x.rotation, tilt: x.tilt, hung: isWallHung(x) };
+          m(x); syncParam(x);
+          if (before.hung || isWallHung(x)) keepWallAnchor(before, x);
+          if (!x.opts || !Object.keys(x.opts).length) delete x.opts;
+          if (wasAuto) x.name = autoName(x.shape, x.variant, undefined, x.opts);
+        });
+      },
+    });
+    sizeGroup = group(objLabel(it0.shape), paramEd.el);
   } else if (it0.shape && OBJECT_BY_SHAPE[it0.shape]?.variants) {
     // preset objects (bed, lamp, plant, desk, chair): pick a type / size, no free dimensions
     const shape = it0.shape;
@@ -496,6 +523,15 @@ function itemPanel(id: string): Panel {
     } else if (it.shape === 'wall') {
       typeLabel.textContent = t('insp.typeWall');
       fw!.set(it.size.w); fh!.set(it.size.h);
+    } else if (paramEd && it.kind === 'block') {
+      const type = objLabel(it.shape);
+      let sub = '';
+      if (it.shape === 'tv') sub = `${fmtInch(tvInch(it))} · ${variantLabel(it.shape, it.variant)}`;
+      else if (it.shape === 'table') sub = [t(`obj.table.${tableStyle(it)}` as TKey), it.opts?.round ? t('obj.table.roundShort', { d: fmtCm(it.size.w) }) : ''].filter(Boolean).join(' · ');
+      else { const op = frameOpening(it); sub = `${variantLabel(it.shape, it.variant)} · ${fmtCm(op.w)} × ${fmtCm(op.h)}`; }
+      typeLabel.textContent = `${type} · ${sub}`;
+      paramEd.set(it, locked);
+      heroIcon.replaceChildren(icon(shapeIcon(it.shape, it.variant), 22));
     } else if (variantPick) {
       const v = variantOf(it.shape!, it.variant);
       // type · group · variant ("Lampe · Sur pied · Arc 190"); the group is skipped when it repeats the type ("Bureau · Bureaux")

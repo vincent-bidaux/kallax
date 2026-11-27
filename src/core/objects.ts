@@ -139,7 +139,8 @@ export const OBJECT_DEFS: ObjectDef[] = [
 // Extra object definitions contributed by feature modules (chairs, desks…).
 import { CHAIR_DEF } from './objects-chairs';
 import { DESK_DEF } from './objects-desks';
-OBJECT_DEFS.push(DESK_DEF, CHAIR_DEF);
+import { TV_DEF, TABLE_DEF, FRAME_DEF } from './objects-params';
+OBJECT_DEFS.push(DESK_DEF, TABLE_DEF, CHAIR_DEF, TV_DEF, FRAME_DEF);
 
 export const OBJECT_BY_SHAPE = Object.fromEntries(OBJECT_DEFS.map(d => [d.shape, d])) as Record<BlockShape, ObjectDef>;
 export const OBJECT_GROUPS: { id: ObjectGroup; labelKey: string }[] = [
