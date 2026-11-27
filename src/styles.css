@@ -1757,3 +1757,107 @@ html.theme-paper .rot-ax.ax-z { color: #0090ff; }
 .param-editor .obj-row .segmented { width: 170px; }
 .param-ro-box { opacity: .85; }
 .param-ro-v { flex: 1; min-width: 0; text-align: right; font-variant-numeric: tabular-nums; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ── first-person walk ("Visite") ─────────────────────────── */
+.tb-walk svg { color: var(--accent-text); }
+/* immersive: the 3D view covers the whole window (the chrome stays inert below) */
+:root.walking .stage { position: fixed; inset: 0; z-index: 60; }
+:root.walking .kd-cube, :root.walking .vp-pill, :root.walking .vp-empty, :root.walking .kd-dim-layer, :root.walking .kd-rot-layer { display: none !important; }
+.walk-layer {
+  position: absolute; inset: 0; z-index: 40;
+  cursor: pointer;
+  user-select: none; -webkit-user-select: none;
+}
+.walk-layer.running { cursor: crosshair; }
+.walk-layer.locked { cursor: none; }
+.walk-hud {
+  position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 8px;
+  height: 40px; padding: 0 8px 0 14px;
+  border-radius: 999px;
+  color: var(--text);
+  background: var(--popover-bg);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  backdrop-filter: blur(30px) saturate(180%);
+  box-shadow: var(--shadow-float), 0 0 0 .5px var(--shadow-pop-border);
+  white-space: nowrap;
+  cursor: default;
+  transition: opacity var(--t-slow) ease;
+}
+.walk-layer.locked .walk-hud { opacity: .78; pointer-events: none; }
+.walk-title { display: inline-flex; align-items: center; gap: 7px; font: 600 13px/1 var(--font-display); letter-spacing: -.01em; }
+.walk-title svg { color: var(--accent-text); }
+.walk-sep { width: 1px; height: 18px; background: var(--sep-strong); }
+.walk-seg { min-width: 300px; }
+.walk-icon-btn {
+  width: 30px; height: 28px; display: grid; place-items: center;
+  border: 0; border-radius: 999px; background: transparent; color: var(--text-2);
+  transition: background-color var(--t-fast), color var(--t-fast);
+}
+.walk-icon-btn:hover { background: var(--fill-2); color: var(--text); }
+.walk-icon-btn.off { color: var(--text-3); }
+.walk-esc { display: inline-flex; align-items: center; gap: 6px; color: var(--text-2); font-size: 12px; padding-right: 6px; }
+.walk-cross {
+  position: absolute; left: 50%; top: 50%; width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .92);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .35);
+  pointer-events: none;
+  opacity: 0; transition: opacity var(--t) ease;
+}
+:root.theme-paper .walk-cross { background: rgba(20, 20, 24, .85); box-shadow: 0 0 0 1px rgba(255, 255, 255, .7); }
+.walk-layer.running .walk-cross { opacity: 1; }
+.walk-card {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: 360px; max-width: calc(100% - 32px);
+  display: flex; flex-direction: column; align-items: center; text-align: center; gap: 4px;
+  padding: 22px 20px 16px;
+  border-radius: 16px;
+  color: var(--text);
+  background: var(--sheet-bg);
+  -webkit-backdrop-filter: blur(40px) saturate(190%);
+  backdrop-filter: blur(40px) saturate(190%);
+  box-shadow: var(--shadow-float), 0 0 0 .5px var(--shadow-pop-border);
+  animation: walk-card-in var(--t-slow) var(--ease);
+}
+.walk-card[hidden] { display: none; }
+@keyframes walk-card-in { from { opacity: 0; transform: translate(-50%, -48%) scale(.97); } }
+.walk-card-icon {
+  width: 48px; height: 48px; border-radius: 12px; display: grid; place-items: center; margin-bottom: 6px;
+  color: #fff; background: linear-gradient(180deg, #3b8cf0, #1d5fc4);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, .3), inset 0 0 0 .5px rgba(255, 255, 255, .25);
+}
+.walk-card-title { font: 600 17px/1.3 var(--font-display); letter-spacing: -.015em; }
+.walk-card-sub { font-size: 12.5px; color: var(--text-2); }
+.walk-card-retry { font-size: 12px; color: var(--warning); }
+.walk-card-btns { display: flex; gap: 8px; width: 100%; margin-top: 12px; }
+.walk-card-btns[hidden], .walk-card-settings[hidden] { display: none; }
+.walk-btn {
+  flex: 1; height: 32px; border: 0; border-radius: 8px;
+  font-weight: 600; color: var(--text); background: var(--fill-3);
+  transition: background-color var(--t-fast), transform var(--t-fast);
+}
+.walk-btn:hover { background: var(--fill-press); }
+.walk-btn.primary { background: var(--accent); color: #fff; }
+.walk-btn.primary:hover { background: var(--accent-hover); }
+.walk-btn:active { transform: scale(.98); }
+.walk-card-settings { width: 100%; margin-top: 10px; text-align: left; }
+.walk-range { width: 130px; accent-color: var(--accent); }
+.walk-keys {
+  display: grid; grid-template-columns: auto auto; justify-content: center; gap: 6px 12px; align-items: center;
+  margin: 14px 0 0; padding-top: 12px; width: 100%;
+  border-top: .5px solid var(--sep-strong);
+  font-size: 12px; color: var(--text-2);
+}
+.walk-keys dt { display: flex; gap: 3px; justify-content: flex-end; align-items: center; }
+.walk-keys dd { margin: 0; text-align: left; }
+.walk-or { color: var(--text-3); padding: 0 2px; }
+.walk-card-foot { margin-top: 10px; font-size: 11px; color: var(--text-3); }
+.walk-drag-hint {
+  position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%);
+  padding: 6px 12px; border-radius: 999px; font-size: 12px;
+  color: var(--text-2); background: var(--popover-bg);
+  -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px);
+  pointer-events: none;
+}
+.walk-drag-hint[hidden] { display: none; }

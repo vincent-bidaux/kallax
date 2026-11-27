@@ -11,6 +11,7 @@ import { buildChair } from './furniture-chairs';
 import { buildDesk } from './furniture-desks';
 import { buildFrame, buildTable, buildTv } from './furniture-params';
 import { buildBed, buildLamp, buildPlant } from './furniture-objects';
+import { buildHuman } from './furniture-human';
 import { buildEket } from './eket-geometry';
 import { EKET_LEG_BY_ID, eketDef } from '../core/eket';
 
@@ -73,6 +74,7 @@ export function geometryKey(item: Item, holes?: WallHole[]): string {
     case 'tv': return `tv:${item.variant ?? ''}:${item.opts?.inch ?? ''}:${s.w}x${s.d}x${s.h}`;
     case 'table': return `table:${item.variant ?? ''}:${item.opts?.top ?? ''}:${item.opts?.leg ?? ''}:${item.opts?.round ? 'R' : ''}:${s.w}x${s.d}x${s.h}`;
     case 'frame': return `frame:${item.variant ?? ''}:${s.w}x${s.d}x${s.h}`;
+    case 'human': return `human:${item.variant ?? ''}:${s.w}x${s.d}x${s.h}`; // colour = material, not geometry
     default: return `b${s.w}x${s.d}x${s.h}`; // box, square beam, skirting
   }
 }
@@ -95,6 +97,7 @@ function buildFor(key: string, item: Item, holes?: WallHole[]): ItemGeometry {
     case 'tv': return buildTv(key, s, item.variant, item.opts);
     case 'table': return buildTable(key, s, item.variant, item.opts);
     case 'frame': return buildFrame(key, s, item.variant);
+    case 'human': return buildHuman(key, s, item.variant);
     default: return buildBlock(key, s);
   }
 }

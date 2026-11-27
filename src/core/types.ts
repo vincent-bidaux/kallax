@@ -111,13 +111,14 @@ export interface EketItem extends ItemBase {
 /**
  * Block shapes. Blocks: 'box' (brique), 'cylinder' (round beam), 'square' (square beam).
  * House: 'wall', 'window', 'door', 'skirting', 'radiator'. Objects: 'bed', 'lamp', 'plant',
- * 'desk', 'chair' and the parametric 'tv', 'table', 'frame'.
+ * 'desk', 'chair', 'human' (standing figure) and the parametric 'tv', 'table', 'frame'.
  */
 export type BlockShape =
   | 'box' | 'cylinder' | 'square'
   | 'wall' | 'window' | 'door' | 'skirting' | 'radiator'
   | 'bed' | 'lamp' | 'plant' | 'desk' | 'chair'
-  | 'tv' | 'table' | 'frame';
+  | 'tv' | 'table' | 'frame'
+  | 'human';
 
 export type Item = KallaxItem | BlockItem | EketItem;
 

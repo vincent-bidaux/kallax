@@ -40,14 +40,24 @@ const GROUPS: [string, [string, string[]][]][] = [
     [t('sc.grid'), ['G']],
     [t('sc.shortcuts'), ['?']],
   ]],
+  [t('sc.walkGroup'), [
+    [t('sc.walk'), ['V']],
+    [t('sc.walkMove'), ['ZQSD', 'WASD', '←↑→↓']],
+    [t('sc.walkRun'), ['⇧']],
+    [t('sc.walkJump'), [t('walk.space')]],
+    [t('sc.walkCrouch'), ['C']],
+    [t('sc.walkHeight'), ['E']],
+    [t('sc.walkSound'), ['M']],
+    [t('sc.walkExit'), [t('key.esc')]],
+  ]],
 ];
 
 export function buildShortcutsSheet() {
   const close = h('button', { type: 'button', class: 'sheet-close', 'aria-label': t('common.close') }, icon('xmark', 14));
   const dlg = h('dialog', { class: 'sheet', 'aria-labelledby': 'sheet-title' },
     h('div', { class: 'sheet-head' }, icon('keyboard', 18), h('h2', { id: 'sheet-title' }, t('sc.title')), close),
-    // three columns: Édition + Groupes | Objets | Vue
-    h('div', { class: 'sheet-cols' }, [[0, 1], [2], [3]].map(col => h('div', { class: 'sheet-col' }, col.map(i => {
+    // three columns: Édition + Groupes | Objets | Vue + Visite
+    h('div', { class: 'sheet-cols' }, [[0, 1], [2], [3, 4]].map(col => h('div', { class: 'sheet-col' }, col.map(i => {
       const [title, rows] = GROUPS[i];
       return h('div', { class: 'sheet-group' }, h('h3', null, title),
         h('dl', null, rows.map(([label, keys]) => [

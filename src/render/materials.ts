@@ -80,7 +80,7 @@ export function faceSetOf(item: Item): FaceSet {
   switch (item.shape) {
     case 'wall': return 'wall';
     case 'door': case 'skirting': case 'radiator': case 'bed': case 'lamp': case 'plant': case 'chair': case 'desk':
-    case 'tv': case 'table': case 'frame': return 'plain';
+    case 'tv': case 'table': case 'frame': case 'human': return 'plain';
     default: return 'block'; // box, beams, window
   }
 }

@@ -97,4 +97,16 @@ export interface ViewportAPI {
    * on-screen view is restored right after. Undefined if the canvas can't be read.
    */
   snapshot(o?: SnapshotOpts): string | undefined;
+
+  // ── first-person walk ──
+  /**
+   * Render with `camera` (perspective, Z-up) and call `tick(dt)` every frame
+   * (continuous loop) until endWalk(); orbit controls, dimensions, gizmos and
+   * the origin axes are disabled. The editor camera is not touched.
+   * `hideIds`: items not drawn meanwhile (the Human the walk starts from).
+   */
+  beginWalk(camera: THREE.PerspectiveCamera, tick: (dt: number) => void, hideIds?: string[]): void;
+  /** Back to the editor camera, exactly as it was. */
+  endWalk(): void;
+  isWalking(): boolean;
 }

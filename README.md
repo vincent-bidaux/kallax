@@ -10,6 +10,9 @@ Concepteur de meubles à base d'étagères IKEA **KALLAX**, rendu « plan d'arch
 - Blocs libres (L × P × H en cm) pour simuler radiateur, plinthe, allège…
 - Objets en 3 groupes : Blocs (brique, poutres ronde / carrée), Maison (mur texturé, fenêtre, porte à poignée, plinthe, radiateur), Objets (lit 90 / 140 / 160 / 180, lampe 28 / 50 cm, plante 35 / 50 / 75 cm)
 - Fenêtres et portes percent automatiquement les murs
+- Objet Humain pour juger l’échelle : adulte 1,80 m (yeux 1,68 m) ou enfant 1,40 m (yeux 1,30 m), mannequin lisse en contours vectoriels, 4 couleurs, sans collisions par défaut
+- Visite à la première personne (bouton « Visite » ou V) : vue plein écran à hauteur d’yeux adulte / enfant, souris (pointeur verrouillé), ZQSD / WASD / flèches, ⇧ courir, Espace sauter, C s’accroupir
+- Visite : collisions avec murs et meubles (glisse le long), passage par les portes, marches ≤ 35 cm, bruits de pas synthétisés (WebAudio, coupables), balancement de tête optionnel ; départ depuis l’Humain sélectionné ; Échap = pause puis sortie, la vue d’origine est restaurée
 - Habillage des cases : porte, 2 tiroirs, panier, séparation horizontale (outil + clic dans une case)
 - ⌥ + glisser pour dupliquer, ⌥ + flèches pour un déplacement fin (0,5 cm)
 - Rotation libre autour de Z : pas de 45° (touche R ; ⇧R pour −45°, boutons de l'inspecteur), angle saisi au clavier (décimales), poignée de rotation sur le sol (cadenas : pas de 45° / rotation libre aimantée aux 45° et aux angles des autres objets), pipette pour copier l'angle d'un objet. Bascule X / Y par pas de 90° (touches X, Y)

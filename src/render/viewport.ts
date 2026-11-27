@@ -64,6 +64,7 @@ interface CavAnim { t0: number; dur: number; fromA: number; toA: number; fromR: 
 
 const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3();
 const _m = new THREE.Matrix4();
+const _frustum = new THREE.Frustum();
 
 function sanitizeDir(d: Vec3): THREE.Vector3 {
   const v = new THREE.Vector3(d.x, d.y, d.z);
@@ -148,6 +149,12 @@ export class Viewport implements ViewportAPI {
   private lastSettings: Settings;
   private unsub: () => void;
   private raycastRay = new THREE.Ray();
+  /**
+   * First-person walk (interaction/walk/*): its own perspective camera, a
+   * tick called every frame (continuous loop), editor overlays hidden. The
+   * editor camera is left untouched, so leaving restores the view exactly.
+   */
+  private walk: { cam: THREE.PerspectiveCamera; tick: (dt: number) => void; last: number; hidden: ItemView[] } | null = null;
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -264,6 +271,44 @@ export class Viewport implements ViewportAPI {
     this.dirty = true;
     this.schedule();
   }
+
+  // ════════════════════════════════════════════════════════
+  // First-person walk
+  // ════════════════════════════════════════════════════════
+  beginWalk(cam: THREE.PerspectiveCamera, tick: (dt: number) => void, hideIds: string[] = []): void {
+    if (this.walk) this.endWalk();
+    this.poseAnim = null;
+    this.syncControls();
+    const hidden = hideIds.map(id => this.views.get(id)).filter((v): v is ItemView => !!v);
+    for (const v of hidden) v.group.visible = false;
+    this.walk = { cam, tick, last: 0, hidden };
+    cam.up.copy(Z_UP);
+    cam.aspect = this.width / Math.max(1, this.height);
+    cam.updateProjectionMatrix();
+    this.controls.enabled = false;
+    this.overlay.visible = false;
+    this.groupBoxes.visible = false;
+    this.ground.setAxesVisible(false);
+    this.css2d.domElement.style.display = 'none';
+    if (this.ghost) this.ghost.group.visible = false;
+    this.requestRender();
+  }
+
+  endWalk(): void {
+    if (!this.walk) return;
+    for (const v of this.walk.hidden) v.group.visible = true;
+    this.walk = null;
+    this.overlay.visible = true;
+    this.groupBoxes.visible = true;
+    this.ground.setAxesVisible(store.settings.showAxes);
+    this.css2d.domElement.style.display = '';
+    if (this.ghost) this.ghost.group.visible = true;
+    this.refreshControlsEnabled();
+    this.syncControls();
+    this.requestRender();
+  }
+
+  isWalking(): boolean { return !!this.walk; }
 
   setControlsEnabled(on: boolean): void {
     this.controlsWanted = on;
@@ -625,7 +670,7 @@ export class Viewport implements ViewportAPI {
   }
 
   private refreshControlsEnabled() {
-    this.controls.enabled = this.controlsWanted && !this.poseAnim;
+    this.controls.enabled = this.controlsWanted && !this.poseAnim && !this.walk;
   }
 
   /** Bounds to frame: visible items, or a 2 m area around the origin. */
@@ -736,6 +781,13 @@ export class Viewport implements ViewportAPI {
 
   private frame = (now: number) => {
     this.rafId = 0;
+    if (this.walk) {
+      const w = this.walk;
+      const dt = w.last ? Math.min(0.1, Math.max(0, (now - w.last) / 1000)) : 1 / 60;
+      w.last = now;
+      try { w.tick(dt); } catch (e) { console.error(e); }
+      if (this.walk) { this.renderNow(); this.schedule(); return; }
+    }
     let animating = false;
 
     if (this.poseAnim) { this.stepPose(now); animating = true; }
@@ -786,6 +838,16 @@ export class Viewport implements ViewportAPI {
     this.needsAnotherFrame = false;
     this.dirty = false;
     try {
+      const wc = this.walk?.cam;
+      if (wc) {
+        // walk: own camera; editor overlays (dimensions, gizmos, ViewCube) skipped
+        wc.updateMatrixWorld();
+        this.mats.setPxPerCm(this.height / (2 * 200 * Math.tan(THREE.MathUtils.degToRad(wc.fov / 2))));
+        this.updateSilhouettes(wc);
+        if (store.settings.shadows) SHADE_UNIFORMS.uKeyDir.value.copy(KEY_LIGHT_VIEW).applyQuaternion(wc.quaternion).normalize();
+        this.renderer.render(this.scene, wc);
+        return;
+      }
       this.camera.updateMatrixWorld();
       this.updateCameraDepth();
       this.mats.setPxPerCm(this.height / this.currentH());
@@ -809,13 +871,20 @@ export class Viewport implements ViewportAPI {
   }
 
   /** View-dependent outlines of revolved parts (round beams, lamps, pots) and smooth meshes (chair shells, cushions). */
-  private updateSilhouettes() {
-    const persp = this.camera === this.persp ? this.camera.position : null;
+  private updateSilhouettes(cam: THREE.PerspectiveCamera | ShearOrthoCamera = this.camera) {
+    const persp = (cam as THREE.PerspectiveCamera).isPerspectiveCamera ? cam.position : null;
     // Parallel projections (incl. the sheared cavalier): the projection direction
     // is the ray through any pixel, obtained by unprojecting NDC near/far.
-    const n = _v1.set(0, 0, -1).unproject(this.camera);
-    const dir = _v2.set(0, 0, 1).unproject(this.camera).sub(n).normalize();
-    for (const v of this.views.values()) if (v.geo.frusta || v.geo.face.userData.silEdges) v.updateSilhouette(dir, persp);
+    const n = _v1.set(0, 0, -1).unproject(cam);
+    const dir = _v2.set(0, 0, 1).unproject(cam).sub(n).normalize();
+    // walk: the camera moves every frame — only items in view get their contours rebuilt
+    let fr: THREE.Frustum | null = null;
+    if (this.walk && cam === this.walk.cam) fr = _frustum.setFromProjectionMatrix(_m.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
+    for (const v of this.views.values()) {
+      if (!(v.geo.frusta || v.geo.face.userData.silEdges)) continue;
+      if (fr && !fr.intersectsBox(v.box)) continue;
+      v.updateSilhouette(dir, persp);
+    }
     if (this.ghost && (this.ghost.geo.frusta || this.ghost.geo.face.userData.silEdges)) this.ghost.updateSilhouette(dir, persp);
   }
 
@@ -835,6 +904,7 @@ export class Viewport implements ViewportAPI {
     this.ortho.top = ORTHO_BASE / 2;
     this.ortho.bottom = -ORTHO_BASE / 2;
     this.ortho.updateProjectionMatrix();
+    if (this.walk) { this.walk.cam.aspect = aspect; this.walk.cam.updateProjectionMatrix(); }
     if (!this.fitted && w > 1 && h > 1 && this.controls) {
       this.fitted = true;
       this.zoomToFit(false);

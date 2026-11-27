@@ -287,7 +287,7 @@ const TYPE_TIPS: Partial<Record<BlockShape, TKey>> = {
   box: 'obj.brickTip', cylinder: 'obj.roundTip', square: 'obj.squareTip',
   wall: 'obj.wallTip', window: 'obj.windowTip', door: 'obj.doorTip', skirting: 'obj.skirtingTip', radiator: 'obj.radiatorTip',
   bed: 'obj.bedTip', lamp: 'obj.lampTip', plant: 'obj.plantTip', desk: 'obj.deskTip', chair: 'obj.chairTip',
-  tv: 'obj.tvTip', table: 'obj.tableTip', frame: 'obj.frameTip',
+  tv: 'obj.tvTip', table: 'obj.tableTip', frame: 'obj.frameTip', human: 'obj.humanTip',
 };
 
 const WINDOW_PRESETS = [
@@ -347,10 +347,19 @@ function buildObjectGroups(): HTMLElement[] {
     h('span', { class: 'block-grip', 'aria-hidden': 'true' }, icon('grip', 16)));
   tip(objTile, t('obj.tileTip'));
   // "Collisions" of the next objects (remembered): off = they may overlap anything
-  let collideNew = (() => { try { return localStorage.getItem(LS_NEW_COLLIDE) !== '0'; } catch { return true; } })();
+  let collideAll = (() => { try { return localStorage.getItem(LS_NEW_COLLIDE) !== '0'; } catch { return true; } })();
+  // types created without collisions by default (humans) keep their own switch state (this session)
+  const collideOwn = new Map<BlockShape, boolean>();
+  const collideFor = (shape: BlockShape) => OBJECT_BY_SHAPE[shape].collideDefault === false ? (collideOwn.get(shape) ?? false) : collideAll;
+  let collideNew = collideAll;
   const collideSw = switchRow({
     label: t('insp.collisions'), hint: t('insp.collisionsHint'), icon: 'collide', value: collideNew,
-    onChange: v => { collideNew = v; try { localStorage.setItem(LS_NEW_COLLIDE, v ? '1' : '0'); } catch { /* ignore */ } updateTile(); },
+    onChange: v => {
+      collideNew = v;
+      if (OBJECT_BY_SHAPE[active].collideDefault === false) collideOwn.set(active, v);
+      else { collideAll = v; try { localStorage.setItem(LS_NEW_COLLIDE, v ? '1' : '0'); } catch { /* ignore */ } }
+      updateTile();
+    },
   });
   collideSw.el.classList.add('lib-collide');
   const editor = h('div', { class: 'obj-editor' }, params, collideSw.el, objTile);
@@ -450,6 +459,8 @@ function buildObjectGroups(): HTMLElement[] {
 
   const updateTile = () => {
     const shape = active, o = drafts[shape], def = OBJECT_BY_SHAPE[shape];
+    collideNew = collideFor(shape);
+    collideSw.set(collideNew);
     const name = nameOf(shape);
     tileLabel.textContent = name;
     objTile.setAttribute('aria-label', t('obj.tileAria', { name }));

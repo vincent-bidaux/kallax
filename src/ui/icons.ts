@@ -111,6 +111,12 @@ const P: Record<string, string> = {
   cavalier: '<rect x="3.5" y="9" width="11" height="11" rx="1"/><path d="M3.5 9 9 3.5h11v11L14.5 20M14.5 9 20 3.5"/>',
   iso: '<path d="M12 3 20 7.5v9L12 21l-8-4.5v-9z"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9"/>',
   grip: '<circle cx="9" cy="6" r="1.1" fill="currentColor" stroke="none"/><circle cx="15" cy="6" r="1.1" fill="currentColor" stroke="none"/><circle cx="9" cy="12" r="1.1" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="1.1" fill="currentColor" stroke="none"/><circle cx="9" cy="18" r="1.1" fill="currentColor" stroke="none"/><circle cx="15" cy="18" r="1.1" fill="currentColor" stroke="none"/>',
+  // standing figure (SF "figure.stand"-like), child (smaller, bigger head), walking figure
+  human: '<circle cx="12" cy="4.3" r="1.9"/><path d="M9.6 8.4h4.8c.8 0 1.4.6 1.5 1.4l.6 5.2M8.1 15l.6-5.2c.1-.8.7-1.4 1.5-1.4"/><path d="M10.2 8.6v12M13.8 8.6v12M10.2 14.2h3.6"/>',
+  humanChild: '<circle cx="12" cy="8" r="2.1"/><path d="M10.1 11.6h3.8c.7 0 1.2.5 1.3 1.2l.5 3.6M8.5 16.4l.5-3.6c.1-.7.6-1.2 1.3-1.2"/><path d="M10.5 11.8v8.7M13.5 11.8v8.7M10.5 16h3"/>',
+  walk: '<circle cx="13.2" cy="4.2" r="1.9"/><path d="m10.8 20.5 2-5.2-2.3-2.4.9-4.4"/><path d="m11.4 8.5 2.9.3 1.6 3 2.4 1"/><path d="m11.4 8.5-2.6 1.4-1 3"/><path d="m12.8 15.3 2.4 1.6.6 3.6"/>',
+  speaker: '<path d="M4.5 9.5h3l4-3.5v12l-4-3.5h-3z"/><path d="M15 9.2a3.8 3.8 0 0 1 0 5.6M17.4 6.8a7.2 7.2 0 0 1 0 10.4"/>',
+  speakerSlash: '<path d="M4.5 9.5h3l4-3.5v12l-4-3.5h-3z"/><path d="m15.5 9.5 5 5M20.5 9.5l-5 5"/>',
   orbit: '<ellipse cx="12" cy="12" rx="9" ry="4"/><path d="M15.5 6.4A9 4 0 0 1 21 12"/><circle cx="12" cy="12" r="2"/><path d="m19.2 7.8 1.8-1.4.3 2.2"/>',
 };
 

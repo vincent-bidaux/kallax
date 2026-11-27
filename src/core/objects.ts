@@ -62,6 +62,8 @@ export interface ObjectDef {
   structure?: boolean;
   /** Openings cut through walls they are placed on. */
   cutsWalls?: boolean;
+  /** `false`: new objects of this type are created with collisions off (humans). */
+  collideDefault?: false;
 }
 
 /** Bed: base + mattress slab 20 cm thick, pillows (12 cm) on top → item box 32 cm high. */
@@ -140,7 +142,8 @@ export const OBJECT_DEFS: ObjectDef[] = [
 import { CHAIR_DEF } from './objects-chairs';
 import { DESK_DEF } from './objects-desks';
 import { TV_DEF, TABLE_DEF, FRAME_DEF } from './objects-params';
-OBJECT_DEFS.push(DESK_DEF, TABLE_DEF, CHAIR_DEF, TV_DEF, FRAME_DEF);
+import { HUMAN_DEF } from './objects-human';
+OBJECT_DEFS.push(DESK_DEF, TABLE_DEF, CHAIR_DEF, TV_DEF, FRAME_DEF, HUMAN_DEF);
 
 export const OBJECT_BY_SHAPE = Object.fromEntries(OBJECT_DEFS.map(d => [d.shape, d])) as Record<BlockShape, ObjectDef>;
 export const OBJECT_GROUPS: { id: ObjectGroup; labelKey: string }[] = [

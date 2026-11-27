@@ -13,6 +13,7 @@ import { buildAccountButton } from './account';
 import { addSelectionToComponents } from './components';
 import { selectionHasGroups } from '../core/groups';
 import type { MenuItem } from './popover';
+import { toggleWalk } from '../interaction/walk/walk-mode';
 
 export interface ToolbarHooks {
   toggleSidebar(): void;
@@ -77,9 +78,12 @@ export function buildToolbar(host: HTMLElement, hooks: ToolbarHooks) {
     onChange: (v) => cmd.setProjection(v),
     cls: 'seg-proj',
   });
+  // first-person walk: a separate action (not a camera preset), right of the projection
+  const walkBtn = button({ icon: 'walk', label: t('walk.button'), tip: t('walk.buttonTip'), kbd: 'V', cls: 'tb-btn tb-pill tb-walk', iconSize: 17, onClick: toggleWalk });
   const center = h('div', { class: 'tb-center' },
     h('div', { class: 'tb-labeled' }, viewSeg.el),
-    h('div', { class: 'tb-labeled' }, projSeg.el));
+    h('div', { class: 'tb-labeled' }, projSeg.el),
+    walkBtn);
 
   // ── right: popovers ──
   const cotesBtn = button({ icon: 'ruler', label: t('tb.dims'), tip: t('tb.dims'), cls: 'tb-btn tb-pill', iconSize: 17 });

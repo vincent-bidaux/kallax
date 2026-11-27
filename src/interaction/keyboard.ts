@@ -8,6 +8,7 @@ import { cancelActiveDrag } from './drag-drop';
 import { cancelActiveMove } from './select-move';
 import { cancelActiveRotate } from './rotate-tool';
 import { closeAllPopovers } from '../ui/popover';
+import { toggleWalk } from './walk/walk-mode';
 
 const FINE_STEP = 0.5;
 
@@ -81,6 +82,7 @@ export function installKeyboard(hooks: KeyboardHooks) {
       case '2': handled(); cmd.setView('cavalier'); return;
       case 'f': handled(); cmd.zoomToFit(); return;
       case 'p': handled(); cmd.toggleProjection(); return;
+      case 'v': handled(); toggleWalk(); return;
       case 'm':
         handled(); cmd.toggleSetting('measureItems');
         toast(store.settings.measureItems ? t('cmd.dimsShown') : t('cmd.dimsHidden'), 1400);
