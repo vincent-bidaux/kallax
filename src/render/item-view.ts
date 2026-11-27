@@ -289,6 +289,27 @@ export class ItemView {
     this.hidden.renderOrder = RO.hidden;
     // Selected / hovered edges win over neighbours' coincident edges.
     if (state !== 'normal') { this.outer.renderOrder = RO.line + 0.5; this.inner.renderOrder = RO.line + 0.5; this.fit.renderOrder = RO.line + 0.5; }
+    if (this.translucent) this.applyTranslucent();
+  }
+
+  /** Walk mode: faces see-through (doors), edges kept. */
+  private translucent = false;
+  setTranslucent(on: boolean) {
+    if (on === this.translucent) return;
+    this.translucent = on;
+    if (on) { this.applyTranslucent(); return; }
+    const src = this.face.userData.opaqueMat as THREE.Material | THREE.Material[] | undefined;
+    if (src) this.face.material = src;
+    delete this.face.userData.opaqueMat;
+    this.face.castShadow = !this.isGhost;
+    this.face.renderOrder = RO.face;
+  }
+  private applyTranslucent() {
+    const cur = this.face.material;
+    this.face.userData.opaqueMat = cur;
+    this.face.material = Array.isArray(cur) ? cur.map(translucentOf) : translucentOf(cur);
+    this.face.castShadow = false;
+    this.face.renderOrder = RO.face + 1;
   }
 
   applyGhostMaterials(lib: MaterialLibrary, valid: boolean) {
@@ -319,6 +340,22 @@ export class ItemView {
     this.silGeo.dispose();
     releaseGeometry(this.geo);
   }
+}
+
+const _translucent = new WeakMap<THREE.Material, THREE.Material>();
+/** See-through copy of a face material (same shading patch), cached per source. */
+function translucentOf(m: THREE.Material): THREE.Material {
+  let t = _translucent.get(m);
+  if (!t) {
+    t = m.clone();
+    t.onBeforeCompile = m.onBeforeCompile;
+    t.customProgramCacheKey = m.customProgramCacheKey;
+    t.transparent = true;
+    t.opacity = Math.min(m.opacity, 0.22);
+    t.depthWrite = false;
+    _translucent.set(m, t);
+  }
+  return t;
 }
 
 export type { LineMaterial };

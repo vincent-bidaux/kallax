@@ -281,6 +281,8 @@ export class Viewport implements ViewportAPI {
     this.syncControls();
     const hidden = hideIds.map(id => this.views.get(id)).filter((v): v is ItemView => !!v);
     for (const v of hidden) v.group.visible = false;
+    // doors see-through while walking
+    for (const v of this.views.values()) if (v.item.kind === 'block' && v.item.shape === 'door') v.setTranslucent(true);
     this.walk = { cam, tick, last: 0, hidden };
     cam.up.copy(Z_UP);
     cam.aspect = this.width / Math.max(1, this.height);
@@ -297,6 +299,7 @@ export class Viewport implements ViewportAPI {
   endWalk(): void {
     if (!this.walk) return;
     for (const v of this.walk.hidden) v.group.visible = true;
+    for (const v of this.views.values()) v.setTranslucent(false);
     this.walk = null;
     this.overlay.visible = true;
     this.groupBoxes.visible = true;
