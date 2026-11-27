@@ -8,6 +8,9 @@
 //   GET    /api/projects/:id                        → one project with doc
 //   PUT    /api/projects/:id   {name, doc, items, thumb?, createdAt?}
 //   DELETE /api/projects/:id
+//   GET    /api/components                          → reusable components (list, with data)
+//   PUT    /api/components/:id {name, data, thumb?}
+//   DELETE /api/components/:id
 
 interface Env {
   DB: D1Database;
@@ -226,6 +229,45 @@ async function projects(req: Request, env: Env, user: { id: string }, id: string
   return json({ error: 'method_not_allowed' }, 405);
 }
 
+// Reusable components: a group of items saved relative to its min corner. `data` is opaque JSON for the server.
+interface ComponentRow { id: string; name: string; data: string; thumb: string | null; created_at: number; updated_at: number }
+async function components(req: Request, env: Env, user: { id: string }, id: string | null): Promise<Response> {
+  if (!id) {
+    if (req.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
+    const { results } = await env.DB.prepare('SELECT id, name, data, thumb, created_at, updated_at FROM components WHERE user_id = ? ORDER BY updated_at DESC LIMIT 500')
+      .bind(user.id).all<ComponentRow>();
+    return json({ components: results.map(r => {
+      let data: unknown = null; try { data = JSON.parse(r.data); } catch { /* corrupt */ }
+      return { id: r.id, name: r.name, data, createdAt: r.created_at, updatedAt: r.updated_at, ...(r.thumb ? { thumb: r.thumb } : {}) };
+    }) });
+  }
+  if (!ID_RE.test(id)) return json({ error: 'invalid_id' }, 400);
+  if (req.method === 'PUT') {
+    const body = await readJson<{ name?: string; data?: unknown; thumb?: string; createdAt?: number }>(req, 512 * 1024 + MAX_THUMB);
+    if (!body) return json({ error: 'too_large' }, 413);
+    const d = body.data as { items?: unknown[] } | undefined;
+    if (!d || !Array.isArray(d.items) || !d.items.length) return json({ error: 'invalid_data' }, 400);
+    const data = JSON.stringify(d);
+    if (data.length > 512 * 1024) return json({ error: 'too_large' }, 413);
+    const name = String(body.name || 'Composant').slice(0, 200);
+    const thumb = typeof body.thumb === 'string' && body.thumb.startsWith('data:image/') && body.thumb.length <= MAX_THUMB ? body.thumb : null;
+    const now = Date.now();
+    const createdAt = Number.isFinite(body.createdAt) ? Math.min(Number(body.createdAt), now) : now;
+    const count = await env.DB.prepare('SELECT COUNT(*) n FROM components WHERE user_id = ?').bind(user.id).first<{ n: number }>();
+    const exists = await env.DB.prepare('SELECT 1 x FROM components WHERE user_id = ? AND id = ?').bind(user.id, id).first();
+    if (!exists && count && count.n >= 500) return json({ error: 'too_many' }, 409);
+    await env.DB.prepare(`INSERT INTO components (id, user_id, name, data, thumb, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(user_id, id) DO UPDATE SET name = excluded.name, data = excluded.data, thumb = COALESCE(excluded.thumb, components.thumb), updated_at = excluded.updated_at`)
+      .bind(id, user.id, name, data, thumb, createdAt, now).run();
+    return json({ component: { id, name, createdAt, updatedAt: now } });
+  }
+  if (req.method === 'DELETE') {
+    await env.DB.prepare('DELETE FROM components WHERE user_id = ? AND id = ?').bind(user.id, id).run();
+    return json({ ok: true });
+  }
+  return json({ error: 'method_not_allowed' }, 405);
+}
+
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
@@ -248,6 +290,12 @@ export default {
         const u = await currentUser(req, env);
         if (!u) return json({ error: 'unauthorized' }, 401);
         return await projects(req, env, u, m[1] ? decodeURIComponent(m[1]) : null);
+      }
+      const c = path.match(/^\/api\/components(?:\/([^/]+))?$/);
+      if (c) {
+        const u = await currentUser(req, env);
+        if (!u) return json({ error: 'unauthorized' }, 401);
+        return await components(req, env, u, c[1] ? decodeURIComponent(c[1]) : null);
       }
       return json({ error: 'not_found' }, 404);
     } catch (e) {

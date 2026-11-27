@@ -8,3 +8,5 @@ CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id TEXT N
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 CREATE TABLE IF NOT EXISTS projects (id TEXT NOT NULL, user_id TEXT NOT NULL, name TEXT NOT NULL, items INTEGER NOT NULL DEFAULT 0, thumb TEXT, doc TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (user_id, id));
 CREATE INDEX IF NOT EXISTS idx_projects_user ON projects(user_id, updated_at);
+CREATE TABLE IF NOT EXISTS components (id TEXT NOT NULL, user_id TEXT NOT NULL, name TEXT NOT NULL, data TEXT NOT NULL, thumb TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (user_id, id));
+CREATE INDEX IF NOT EXISTS idx_components_user ON components(user_id, updated_at);
