@@ -22,6 +22,8 @@ class UIState {
   insertTool: InsertTool | null = null;
   /** Angle eyedropper armed: the next click on an item copies its Z angle to the selection. */
   eyedropper = false;
+  /** Cross-angle corner / edge magnet that caught during a move / placement (snap marker), null when none. */
+  snapMark: { x: number; y: number; z0: number; z1: number } | null = null;
   /** Hovered cell label while a tool is active. */
   toolHint: string | null = null;
   private ls = new Set<(e: UIEvent) => void>();
@@ -34,6 +36,11 @@ class UIState {
   setToolHint(h: string | null) { if (h !== this.toolHint) { this.toolHint = h; this.emit('tool'); } }
   setCursor(p: Vec3 | null) { this.cursor = p; this.emit('cursor'); }
   setSnap(s: string | null) { if (s !== this.snap) { this.snap = s; this.emit('snap'); } }
+  setSnapMark(m: UIState['snapMark']) {
+    const o = this.snapMark;
+    if (o === m || (o && m && o.x === m.x && o.y === m.y && o.z0 === m.z0 && o.z1 === m.z1)) return;
+    this.snapMark = m; this.emit('snap');
+  }
   setGesture(g: UIState['gesture'], valid = true) {
     if (g !== this.gesture || valid !== this.gestureValid) {
       this.gesture = g; this.gestureValid = valid; this.emit('gesture');

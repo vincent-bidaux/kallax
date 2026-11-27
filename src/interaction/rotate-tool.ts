@@ -1,18 +1,21 @@
 // ─────────────────────────────────────────────────────────────
 // Canvas rotation tool (à la Bambu Studio) + angle eyedropper.
 //
-// When exactly one item or one whole group is selected, a circle is drawn
-// on the floor plane at the base of the selection, around its rotation pivot
-// (commands.rotationPivot). A handle on the rim shows the angle about Z of
-// the selection's reference item (0° = +X, counter-clockwise seen from above,
-// like `rotation`); short ticks inside the circle mark every 45°.
+// When exactly one item or one whole group is selected, a horizontal circle
+// is drawn at the vertical centre of the selection (middle of its world box),
+// around its rotation pivot (commands.rotationPivot). A handle on the rim
+// shows the angle about Z of the selection's reference item (0° = +X,
+// counter-clockwise seen from above, like `rotation`); long ticks inside the
+// circle (≈ 92 % → 55 % of the radius) mark every 45°.
 //
 // Dragging the handle turns the selection live (store.preview → one undo
 // step on release, Esc cancels):
 //   - padlock closed (settings.rotationFree = false): 45° steps;
-//   - padlock open: free angle, magnetised (±4°) to the 45° ticks and to the
-//     angles of the other visible items (modulo 90°), so a unit can be turned
-//     to sit square with a wall at 34°.
+//   - padlock open: free angle, magnetised (±7°, released beyond ±9° —
+//     hysteresis, no flicker at the edge of the zone) to the 45° ticks and to
+//     the angles of the other visible items (modulo 90°), so a unit can be
+//     turned to sit square with a wall at 34°. Entering a magnet lights its
+//     tick, shows the snapped value in the pill (accent) and pulses the handle.
 // A pill next to the handle shows the angle, the padlock and the eyedropper:
 // arm it, click another item → the selection takes that item's angle.
 //
@@ -30,6 +33,7 @@ import { store } from '../core/store';
 import { soleGroup } from '../core/groups';
 import { angleDiff, fmtAngle, isRightAngle, normAngle } from '../core/orient';
 import { itemOBB, obbCorners2D } from '../core/obb';
+import { unionBox } from '../core/kallax';
 import { t, DECIMAL } from '../core/i18n';
 import { LineSegments2, makeLineMaterial, disposeLineMaterial, type LineMaterial } from '../render/lines';
 import { ui } from './context';
@@ -37,11 +41,16 @@ import * as cmd from './commands';
 import { toast } from '../ui/dom';
 import { icon } from '../ui/icons';
 import { tip } from '../ui/controls';
+import { installSnapMarker } from './snap-marker';
 
 /** Magnet distance (degrees) to the 45° ticks and to other items' angles. */
-const SNAP_DEG = 4;
+const SNAP_DEG = 7;
+/** Once snapped, the magnet only lets go beyond SNAP_DEG + SNAP_HYST (no flicker at the boundary). */
+const SNAP_HYST = 2;
 /** Screen sizes (CSS px). */
-const PX = { margin: 26, minRadius: 46, tickGap: 6, tickMajor: 11, tickMinor: 7, };
+const PX = { margin: 26, minRadius: 46 };
+/** Ticks, as fractions of the radius: outer end, inner end (90° / 45° ticks). */
+const TICK = { outer: 0.92, innerMajor: 0.55, innerMinor: 0.62 };
 
 const STYLE_ID = 'kd-rot-style';
 const CSS = `
@@ -55,6 +64,15 @@ const CSS = `
 }
 .kd-rot-handle:hover { transform: scale(1.18); }
 .kd-rot-handle.drag { cursor: grabbing; transform: scale(1.25); box-shadow: 0 0 0 5px var(--kd-rot-halo), 0 1px 3px rgba(0,0,0,.35); }
+.kd-rot-handle.pulse { animation: kd-rot-pulse .32s ease-out; }
+@keyframes kd-rot-pulse {
+  0% { transform: scale(1.25); box-shadow: 0 0 0 5px var(--kd-rot-halo), 0 1px 3px rgba(0,0,0,.35); }
+  35% { transform: scale(1.5); box-shadow: 0 0 0 9px var(--kd-rot-halo), 0 1px 3px rgba(0,0,0,.35); }
+  100% { transform: scale(1.25); box-shadow: 0 0 0 5px var(--kd-rot-halo), 0 1px 3px rgba(0,0,0,.35); }
+}
+.kd-rot-pill.pulse .kd-rot-val { animation: kd-rot-bump .32s ease-out; }
+@keyframes kd-rot-bump { 0% { transform: scale(1); } 35% { transform: scale(1.14); } 100% { transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { .kd-rot-handle.pulse, .kd-rot-pill.pulse .kd-rot-val { animation: none; } }
 .kd-rot-pill {
   pointer-events: auto; display: inline-flex; align-items: center; gap: 2px; height: 26px; box-sizing: border-box;
   padding: 0 3px 0 9px; border-radius: 999px; white-space: nowrap;
@@ -64,7 +82,7 @@ const CSS = `
   -webkit-backdrop-filter: blur(24px) saturate(180%); backdrop-filter: blur(24px) saturate(180%);
   box-shadow: var(--shadow-float), 0 0 0 .5px var(--shadow-pop-border);
 }
-.kd-rot-val { min-width: 42px; text-align: right; margin-right: 3px; }
+.kd-rot-val { display: inline-block; min-width: 42px; text-align: right; margin-right: 3px; transform-origin: 100% 50%; }
 .kd-rot-pill.snapped .kd-rot-val { color: var(--accent-text); }
 .kd-rot-btn {
   display: inline-grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%;
@@ -96,6 +114,8 @@ interface Drag {
   angle: number;
   snapped: 'tick' | 'item' | null;
   snapName: string;
+  /** Angle of the magnet currently holding the handle (hysteresis), null when free. */
+  snapTo: number | null;
 }
 
 let cancelRotate: (() => boolean) | null = null;
@@ -122,6 +142,8 @@ export function toggleEyedropper(on = !ui.eyedropper) {
 
 export function installRotateTool(vp: ViewportAPI) {
   ensureStyle();
+  // the move / placement snap marker (cross-angle corner magnets) lives in the same overlay
+  installSnapMarker(vp);
   const el = vp.container;
   const canvas = () => vp.getRenderer().domElement;
 
@@ -143,7 +165,7 @@ export function installRotateTool(vp: ViewportAPI) {
       m.transparent = true; m.depthWrite = false;
       return m;
     };
-    mats = { ring: mk(1.5, 0.95), tick: mk(1.5, 0.7), hot: mk(3, 1), ray: mk(1, 0.75) };
+    mats = { ring: mk(1.5, 0.95), tick: mk(2.25, 0.8), hot: mk(3.5, 1), ray: mk(1, 0.75) };
     matTheme = store.settings.theme;
     layer.style.setProperty('--kd-rot-fill', paper ? '#007aff' : '#0a84ff');
     layer.style.setProperty('--kd-rot-halo', paper ? 'rgba(0,122,255,.22)' : 'rgba(100,210,255,.3)');
@@ -269,7 +291,9 @@ export function installRotateTool(vp: ViewportAPI) {
     const items = drag ? store.items.filter(i => drag!.base.some(b => b.id === i.id)) : tgt!.items;
     const ref = drag ? null : tgt!.ref;
     const P0 = drag ? drag.pivot : cmd.rotationPivot(items, ref!.rotation);
-    const z = drag ? drag.z : Math.min(...items.map(i => i.position.z));
+    // vertical centre of the selection's world box (the ring stays horizontal: rotation about Z)
+    const ub = unionBox(items);
+    const z = drag ? drag.z : ub ? (ub.min.z + ub.max.z) / 2 : P0.z;
     const P = { x: P0.x, y: P0.y, z };
     const k = pxScale(P);
     if (k === null) { hide(); return; }
@@ -296,7 +320,7 @@ export function installRotateTool(vp: ViewportAPI) {
       const tk: number[] = [];
       const tickAt = (deg: number, major: boolean, out: number[]) => {
         const a = (deg * Math.PI) / 180, c = Math.cos(a), s = Math.sin(a);
-        const r1 = R - PX.tickGap * k, r0 = r1 - (major ? PX.tickMajor : PX.tickMinor) * k;
+        const r1 = R * TICK.outer, r0 = R * (major ? TICK.innerMajor : TICK.innerMinor);
         out.push(P.x + r0 * c, P.y + r0 * s, z, P.x + r1 * c, P.y + r1 * s, z);
       };
       for (let d = 0; d < 360; d += 45) tickAt(d, d % 90 === 0, tk);
@@ -304,12 +328,12 @@ export function installRotateTool(vp: ViewportAPI) {
       const hp: number[] = [];
       if (hotAngle !== null) tickAt(hotAngle, true, hp);
       setPos(hot, hp);
-      // while dragging: a ray from near the pivot towards the handle, stopping short of
-      // the ticks (so a highlighted tick reads on its own)
+      // while dragging: a ray from near the pivot towards the handle; when snapped it
+      // stops short of the ticks (so the highlighted tick reads on its own)
       const rp: number[] = [];
       if (drag) {
         const a = (angle * Math.PI) / 180;
-        const r1 = R - (PX.tickGap + PX.tickMajor + 4) * k;
+        const r1 = hotAngle !== null ? R * TICK.innerMajor - 5 * k : R * TICK.outer;
         const r0 = Math.min(r1 * 0.4, 18 * k);
         if (r1 > r0) rp.push(P.x + r0 * Math.cos(a), P.y + r0 * Math.sin(a), z, P.x + r1 * Math.cos(a), P.y + r1 * Math.sin(a), z);
         // and the outer stub from the rim to the handle is the rim itself
@@ -360,13 +384,17 @@ export function installRotateTool(vp: ViewportAPI) {
 
   // ── drag the handle ──
   /** Angle after magnets: 45° ticks (always when the padlock is closed) and other items' angles. */
-  const snapAngle = (raw: number, moving: Set<string>): { angle: number; snapped: Drag['snapped']; name: string } => {
+  const snapAngle = (raw: number, moving: Set<string>, held: number | null): { angle: number; snapped: Drag['snapped']; name: string } => {
     raw = normAngle(raw);
     if (!store.settings.rotationFree) return { angle: normAngle(Math.round(raw / 45) * 45), snapped: 'tick', name: '' };
     let best: { angle: number; d: number; snapped: Drag['snapped']; name: string } | null = null;
     const consider = (a: number, kind: 'tick' | 'item', name: string) => {
       const d = Math.abs(angleDiff(raw, a));
-      if (d <= SNAP_DEG && (!best || d < best.d - 1e-9)) best = { angle: normAngle(a), d, snapped: kind, name };
+      // the magnet holding the handle keeps it up to SNAP_DEG + SNAP_HYST, and wins ties
+      const isHeld = held !== null && Math.abs(angleDiff(a, held)) < 1e-6;
+      const lim = isHeld ? SNAP_DEG + SNAP_HYST : SNAP_DEG;
+      const dd = isHeld ? d - SNAP_HYST : d;
+      if (d <= lim && (!best || dd < best.d - 1e-9)) best = { angle: normAngle(a), d: dd, snapped: kind, name };
     };
     for (let a = 0; a < 360; a += 45) consider(a, 'tick', '');
     for (const it of store.visibleItems()) {
@@ -380,6 +408,16 @@ export function installRotateTool(vp: ViewportAPI) {
     return { angle: b.angle, snapped: b.snapped, name: b.name };
   };
 
+  /** Short "click" of the handle and the pill value when a magnet catches it. */
+  const pulse = () => {
+    for (const n of [handle, pill]) {
+      n.classList.remove('pulse');
+      void n.offsetWidth; // restart the animation
+      n.classList.add('pulse');
+    }
+  };
+  for (const n of [handle, pill]) n.addEventListener('animationend', () => n.classList.remove('pulse'));
+
   const onMove = (e: PointerEvent) => {
     if (!drag || e.pointerId !== drag.pid) return;
     e.stopPropagation();
@@ -387,9 +425,12 @@ export function installRotateTool(vp: ViewportAPI) {
     if (a === null) return;
     const raw = drag.theta0 + angleDiff(a, drag.a0);
     const moving = new Set(drag.base.map(i => i.id));
-    const s = snapAngle(raw, moving);
+    const s = snapAngle(raw, moving, drag.snapTo);
+    const entered = s.snapped !== null && (drag.snapTo === null || Math.abs(angleDiff(s.angle, drag.snapTo)) > 1e-6);
     drag.snapped = s.snapped;
     drag.snapName = s.name;
+    drag.snapTo = s.snapped ? s.angle : null;
+    if (entered) pulse();
     if (Math.abs(angleDiff(s.angle, drag.angle)) < 1e-9 && store.items.some(i => moving.has(i.id))) { vp.requestRender(); return; }
     drag.angle = s.angle;
     const delta = angleDiff(s.angle, drag.theta0);
@@ -436,7 +477,7 @@ export function installRotateTool(vp: ViewportAPI) {
     if (ui.eyedropper) ui.setEyedropper(false);
     drag = {
       pid: e.pointerId, base: structuredClone(tgt.items), pivot: { ...frame.P }, z: frame.P.z,
-      theta0: normAngle(tgt.ref.rotation), a0, angle: normAngle(tgt.ref.rotation), snapped: null, snapName: '',
+      theta0: normAngle(tgt.ref.rotation), a0, angle: normAngle(tgt.ref.rotation), snapped: null, snapName: '', snapTo: null,
     };
     try { handle.setPointerCapture(e.pointerId); } catch { /* ignore */ }
     handle.addEventListener('pointermove', onMove);

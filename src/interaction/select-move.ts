@@ -120,6 +120,7 @@ export function installSelectMove(vp: ViewportAPI) {
       vp.setGhost(prim ? { item: prim, valid: false } : null);
     } else vp.setGhost(null);
     ui.setSnap(res.label);
+    ui.setSnapMark(res.mark ?? null);
     ui.setGesture('move', g.valid);
     ui.setCursor(vp.rayToPlane(ev.clientX, ev.clientY, { x: 0, y: 0, z: 1 }, 0));
     vp.requestRender();
@@ -190,6 +191,7 @@ export function installSelectMove(vp: ViewportAPI) {
     vp.setControlsEnabled(true);
     setCursor('');
     ui.setSnap(null);
+    ui.setSnapMark(null);
     ui.setGesture('none');
     vp.requestRender();
   }

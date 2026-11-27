@@ -107,6 +107,7 @@ function beginDrag(e: PointerEvent, source: HTMLElement, spec: DragSpec) {
       last = null;
       ui.viewport.setGhost(null);
       ui.setSnap(null);
+      ui.setSnapMark(null);
       ui.setGesture('place', true);
       return;
     }
@@ -121,6 +122,7 @@ function beginDrag(e: PointerEvent, source: HTMLElement, spec: DragSpec) {
       item.position = res.position;
       ui.viewport.setGhost({ item: all[0], valid: res.valid, items: all });
       ui.setSnap(res.label);
+      ui.setSnapMark(res.mark ?? null);
       ui.setGesture('place', res.valid);
       ui.setCursor(ui.viewport.rayToPlane(ev.clientX, ev.clientY, { x: 0, y: 0, z: 1 }, 0));
       ui.viewport.requestRender();
@@ -132,6 +134,7 @@ function beginDrag(e: PointerEvent, source: HTMLElement, spec: DragSpec) {
       item.position = res.position;
       ui.viewport.setGhost({ item: { ...item, position: { ...res.position } } as Item, valid: res.valid });
       ui.setSnap(res.label);
+      ui.setSnapMark(res.mark ?? null);
       ui.setGesture('place', res.valid);
       const g = ui.viewport.rayToPlane(ev.clientX, ev.clientY, { x: 0, y: 0, z: 1 }, 0);
       ui.setCursor(g);
@@ -161,6 +164,7 @@ function beginDrag(e: PointerEvent, source: HTMLElement, spec: DragSpec) {
     source.classList.remove('drag-source');
     if (dragging) { ui.viewport.setGhost(null); ui.viewport.requestRender(); }
     ui.setSnap(null);
+    ui.setSnapMark(null);
     ui.setGesture('none');
     active = null;
   };

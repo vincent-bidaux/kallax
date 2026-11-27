@@ -2,12 +2,14 @@
 //  1. surface under the pointer (ground / top face / side face of an item)
 //  2. grid snap of the free axes
 //  3. magnetic snap to other items' faces (flush or aligned) — wins over grid
+//  3b. cross-angle magnet (any angles): footprint corners onto corners, corners
+//     onto footprint edges (and the reverse) — the closest of 3 / 3b wins
 //  4. validity: no overlap of the oriented boxes (core/obb.ts) with other
 //     visible items, z ≥ 0 — items whose "Collisions" switch is off neither
 //     block nor are blocked (core/kallax collides)
 import type { Item, Vec3 } from '../core/types';
 import { collides, frameSize, itemBox, unionBox, worldSize, type Box3 } from '../core/kallax';
-import { frameAxes, itemOBB, obbFrameBox, obbFromFrameBox, obbOverlap, obbSupport, fromFrame, toFrame, type OBB } from '../core/obb';
+import { frameAxes, itemOBB, obbCorners2D, obbFrameBox, obbFromFrameBox, obbOverlap, obbSupport, fromFrame, toFrame, type OBB } from '../core/obb';
 import { itemBaseZ, itemStandsOnFloor } from '../ui/object-labels';
 import { isWallHung } from '../core/objects-params';
 import { angleDiff, frameAngle, isRightAngle, isUpright, normAngle, orientDir, sameFrame } from '../core/orient';
@@ -23,11 +25,15 @@ const SIZE_KEY = { x: 'w', y: 'd', z: 'h' } as const;
 
 export interface SnapGuide {
   axis: Axis;
-  kind: 'flush' | 'align' | 'grid' | 'top' | 'face';
+  /** vertex / edge: cross-angle magnet (corner on a corner / corner on a face line), `axis` unused. */
+  kind: 'flush' | 'align' | 'grid' | 'top' | 'face' | 'vertex' | 'edge';
   targetId?: string;
-  /** World coordinate of the snapped plane. */
+  /** World coordinate of the snapped plane (0 for vertex / edge). */
   value: number;
 }
+
+/** Where a cross-angle magnet caught: the shared vertical edge (x, y, from z0 to z1). */
+export interface SnapMark { x: number; y: number; z0: number; z1: number }
 
 export interface PlaceResult {
   position: Vec3;
@@ -43,6 +49,8 @@ export interface PlaceResult {
    */
   rotation?: number;
   grab?: Vec3;
+  /** Cross-angle corner / edge magnet that caught (snap marker). */
+  mark?: SnapMark;
 }
 
 export interface PlaceOpts {
@@ -89,6 +97,8 @@ export function describeGuides(guides: SnapGuide[], surface: PlaceResult['surfac
     if (g.kind === 'face' && g.targetId) parts.push(t('snap.face', { name: itemName(g.targetId), axis: AXIS_LABEL[g.axis] }));
     else if (g.kind === 'flush' && g.targetId) parts.push(t('snap.flush', { name: itemName(g.targetId), axis: AXIS_LABEL[g.axis] }));
     else if (g.kind === 'align' && g.targetId) parts.push(t('snap.align', { name: itemName(g.targetId), axis: AXIS_LABEL[g.axis] }));
+    else if (g.kind === 'vertex' && g.targetId) parts.push(t('snap.vertex', { name: itemName(g.targetId) }));
+    else if (g.kind === 'edge' && g.targetId) parts.push(t('snap.edge', { name: itemName(g.targetId) }));
   }
   if (!parts.length && guides.some(g => g.kind === 'grid')) parts.push(t('snap.grid', { cm: fmtCm(store.settings.gridCell) }));
   return parts.length ? parts.join('  ·  ') : null;
@@ -230,9 +240,12 @@ function wallBehind(it: Item, n: Vec3, candidates: Item[]): Item | null {
  * Works in the item's FRAME (core/obb.ts): the world turned by φ = the item's
  * angle mod 90. There the item is an axis-aligned box, and so is every other
  * item sharing that frame (angle equal modulo 90°) — those are the only ones
- * it magnetises to (flush faces / aligned edges, exactly like axis-aligned
- * items always did). Items at other angles don't attract it; their faces
- * still stop it (oriented-box collisions) and it can rest on top of them.
+ * it magnetises flush / aligned to (exactly like axis-aligned items always
+ * did). Items at ANY angle also attract it through the cross-angle magnet
+ * (crossCandidates below: corner on corner, corner on a face line), so a wall
+ * at 45° joins a wall at 0° end to end or butts against its face; the closest
+ * of the two magnets wins. Faces at other angles still stop it (oriented-box
+ * collisions) and it can rest on top of them.
  * Grid snap: the min corner of the oriented box, in the frame — the world
  * grid for items at 0 / 90 / 180 / 270°, the grid turned with the item for
  * the others (they move in grid steps along their own axes).
@@ -258,6 +271,10 @@ export function computePlacement(o: PlaceOpts): PlaceResult | null {
     }
   }
 
+  // walls are structure: over other items they stay on the floor plane (not hung on a
+  // face, not stacked) — the corner / edge magnets below join them, at any angle
+  if (item.kind === 'block' && item.shape === 'wall') hitItem = null;
+
   // wall-hung items and openings (window, door) over a wall face (any angle): back to
   // the wall, i.e. turned like the wall (then they share its frame: magnets, holes)
   let turned: number | undefined;
@@ -281,6 +298,8 @@ export function computePlacement(o: PlaceOpts): PlaceResult | null {
   const locked: Record<Axis, boolean> = { x: false, y: false, z: true }; // frame axes
   /** Against a face at another angle: no grid snap (it would pull the item off the face). */
   let offFrameFace = false;
+  /** Outward normal of the side face the item is pushed against (cross-angle snaps slide along it). */
+  let faceN: Vec3 | null = null;
   const guides: SnapGuide[] = [];
   let surface: PlaceResult['surface'] = 'ground';
 
@@ -327,6 +346,7 @@ export function computePlacement(o: PlaceOpts): PlaceResult | null {
       const sup = fs.w / 2 * Math.abs(dot2(n, ax.ex)) + fs.d / 2 * Math.abs(dot2(n, ax.ey));
       const shift = plane + sup - dot2(C, n);
       C.x += shift * n.x; C.y += shift * n.y;
+      faceN = n;
       if (sameFrame(phi, hitItem.rotation)) {
         const nf = toFrame(n, phi);
         const a: Axis = Math.abs(nf.x) > 0.5 ? 'x' : 'y';
@@ -366,8 +386,10 @@ export function computePlacement(o: PlaceOpts): PlaceResult | null {
 
   // ── magnetic snap (wins over grid), with the items sharing the frame ──
   const mates = others.filter(it => sameFrame(phi, it.rotation));
+  const thr = snapThreshold({ x: C.x - s.w / 2 + grab.x, y: C.y - s.d / 2 + grab.y, z: raw.z + grab.z });
+  /** Squared horizontal displacement of the same-frame magnet (null: it did not catch). */
+  let magD2: number | null = null;
   if (settings.snapItems && mates.length) {
-    const thr = snapThreshold({ x: C.x - s.w / 2 + grab.x, y: C.y - s.d / 2 + grab.y, z: raw.z + grab.z });
     const boxes = mates.map(it => ({ id: it.id, b: obbFrameBox(itemOBB(it), phi) }));
     const hg = hangOf(item);
     for (const a of AXES) {
@@ -401,14 +423,49 @@ export function computePlacement(o: PlaceOpts): PlaceResult | null {
       if (best) {
         pos[a] = raw[a] + best.d;
         guides.push({ axis: a, kind: best.kind, targetId: best.id, value: best.value });
+        if (a !== 'z') magD2 = (magD2 ?? 0) + best.d * best.d;
       }
     }
   }
 
+  // ── cross-angle magnet: corners / footprint edges of any item, any angle ──
+  let cross: CrossSnap | null = null;
+  if (settings.snapItems && others.length) {
+    const cr = fromFrame({ x: raw.x + fs.w / 2, y: raw.y + fs.d / 2, z: 0 }, phi);
+    const mo: OBB = { c: { x: cr.x, y: cr.y, z: pos.z + fs.h / 2 }, h: { x: fs.w / 2, y: fs.d / 2, z: fs.h / 2 }, a: phi };
+    const cands = crossCandidates(mo, others, thr, faceN);
+    // same-frame flush / align is richer: it stays unless a cross-angle magnet is closer
+    const magD = magD2 === null ? Infinity : Math.sqrt(magD2);
+    const usable = cands.filter(c => c.d < magD - 1e-6);
+    // first candidate (corners first, then the closest) that leaves the item free; else the first one
+    for (const c of usable.slice(0, 12)) {
+      const p = crossOut(c, mo, s, pos.z);
+      if (itemsFree([{ item, pos: p }], o.ignoreIds)) { cross = c; break; }
+    }
+    if (!cross && usable.length) cross = usable[0];
+    if (cross) {
+      for (let i = guides.length - 1; i >= 0; i--) {
+        const g = guides[i];
+        if (g.kind === 'grid' || ((g.kind === 'flush' || g.kind === 'align') && g.axis !== 'z')) guides.splice(i, 1);
+      }
+      guides.push({ axis: 'x', kind: cross.kind, targetId: cross.id, value: 0 });
+    }
+  }
+
   // back to the world: min corner of the item's AABB; tidy floating point
-  const Cw = fromFrame({ x: pos.x + fs.w / 2, y: pos.y + fs.d / 2, z: pos.z }, phi);
-  const out: Vec3 = { x: Cw.x - s.w / 2, y: Cw.y - s.d / 2, z: pos.z };
-  if (!phi) { out.x = pos.x; out.y = pos.y; }
+  let out: Vec3;
+  let mark: SnapMark | undefined;
+  if (cross) {
+    const cr = fromFrame({ x: raw.x + fs.w / 2, y: raw.y + fs.d / 2, z: 0 }, phi);
+    const mo: OBB = { c: { x: cr.x, y: cr.y, z: pos.z + fs.h / 2 }, h: { x: fs.w / 2, y: fs.d / 2, z: fs.h / 2 }, a: phi };
+    out = crossOut(cross, mo, s, pos.z);
+    mark = { x: cross.point.x, y: cross.point.y, z0: Math.max(pos.z, cross.z0), z1: Math.min(pos.z + fs.h, cross.z1) };
+    if (mark.z1 < mark.z0) mark.z1 = mark.z0;
+  } else {
+    const Cw = fromFrame({ x: pos.x + fs.w / 2, y: pos.y + fs.d / 2, z: pos.z }, phi);
+    out = { x: Cw.x - s.w / 2, y: Cw.y - s.d / 2, z: pos.z };
+    if (!phi) { out.x = pos.x; out.y = pos.y; }
+  }
   for (const a of AXES) out[a] = Math.round(out[a] * 1000) / 1000;
   if (out.z < 0 && out.z > -0.01) out.z = 0;
 
@@ -417,7 +474,87 @@ export function computePlacement(o: PlaceOpts): PlaceResult | null {
     position: out, valid, surface, guides,
     label: describeGuides(guides, surface, hitItem?.id ?? null),
     ...(turned !== undefined ? { rotation: turned, grab: grabIn } : {}),
+    ...(mark ? { mark } : {}),
   };
+}
+
+// ─────────────────────────────────────────────────────────────
+// Cross-angle magnet. Seen from above every item is a rectangle (its OBB
+// footprint); its corners are the vertical edges of the box. Whatever the
+// two angles:
+//   - vertex ↔ vertex: a corner of the moved item onto a corner of another
+//     item (strongest: any corner within reach wins over the edges);
+//   - vertex → edge: a corner of the moved item onto a footprint edge (face
+//     line) of an item at another angle — it then slides along that face;
+//   - edge ← vertex: the reverse, another item's corner onto a face line of
+//     the moved item.
+// Same-frame items also take part in vertex ↔ vertex (corner to corner on a
+// diagonal); their faces are handled by the flush / align magnet.
+// Only items whose height range meets the moved item's are considered
+// (vertical edges that can touch). Against a face (`faceN`), only moves along
+// that face are allowed, so the item stays pressed on it.
+// ─────────────────────────────────────────────────────────────
+
+interface CrossSnap {
+  kind: 'vertex' | 'edge';
+  id: string;
+  /** Distance (cm) the item has to move. */
+  d: number;
+  /** Horizontal move of the item (world). */
+  delta: Vec3;
+  /** Snapped point (world x, y). */
+  point: Vec3;
+  /** Height range of the target item (for the marker). */
+  z0: number;
+  z1: number;
+}
+
+/** Candidates sorted: corners first, then by distance. */
+function crossCandidates(mo: OBB, others: Item[], thr: number, faceN: Vec3 | null): CrossSnap[] {
+  const out: CrossSnap[] = [];
+  const mc = obbCorners2D(mo);
+  const mr = Math.hypot(mo.h.x, mo.h.y);
+  const z0 = mo.c.z - mo.h.z, z1 = mo.c.z + mo.h.z;
+  const push = (kind: CrossSnap['kind'], id: string, dx: number, dy: number, point: Vec3, oz0: number, oz1: number) => {
+    if (faceN) {
+      const dn = dx * faceN.x + dy * faceN.y;
+      if (Math.abs(dn) > 0.05) return; // would leave the face
+      dx -= dn * faceN.x; dy -= dn * faceN.y;
+    }
+    const d = Math.hypot(dx, dy);
+    if (d >= thr) return;
+    out.push({ kind, id, d, delta: { x: dx, y: dy, z: 0 }, point: { x: point.x, y: point.y, z: 0 }, z0: oz0, z1: oz1 });
+  };
+  /** Foot of p on segment ab, when it falls inside it. */
+  const foot = (p: Vec3, a: Vec3, b: Vec3): Vec3 | null => {
+    const ex = b.x - a.x, ey = b.y - a.y, l2 = ex * ex + ey * ey;
+    if (l2 < 1e-9) return null;
+    const u = ((p.x - a.x) * ex + (p.y - a.y) * ey) / l2;
+    if (u <= 1e-6 || u >= 1 - 1e-6) return null; // ends: vertex ↔ vertex
+    return { x: a.x + u * ex, y: a.y + u * ey, z: 0 };
+  };
+  for (const it of others) {
+    const ob = itemOBB(it);
+    const oz0 = ob.c.z - ob.h.z, oz1 = ob.c.z + ob.h.z;
+    if (oz1 < z0 - 0.5 || oz0 > z1 + 0.5) continue;
+    if (Math.hypot(ob.c.x - mo.c.x, ob.c.y - mo.c.y) > mr + Math.hypot(ob.h.x, ob.h.y) + thr) continue;
+    const oc = obbCorners2D(ob);
+    for (const p of mc) for (const q of oc) push('vertex', it.id, q.x - p.x, q.y - p.y, q, oz0, oz1);
+    if (sameFrame(mo.a, ob.a)) continue;
+    for (let i = 0; i < 4; i++) {
+      const a = oc[i], b = oc[(i + 1) % 4];
+      for (const p of mc) { const f = foot(p, a, b); if (f) push('edge', it.id, f.x - p.x, f.y - p.y, f, oz0, oz1); }
+      const ma = mc[i], mb = mc[(i + 1) % 4];
+      for (const q of oc) { const f = foot(q, ma, mb); if (f) push('edge', it.id, q.x - f.x, q.y - f.y, q, oz0, oz1); }
+    }
+  }
+  out.sort((a, b) => (a.kind === b.kind ? a.d - b.d : a.kind === 'vertex' ? -1 : 1));
+  return out;
+}
+
+/** Item position (AABB min corner) after a cross-angle snap of the OBB `mo`. */
+function crossOut(c: CrossSnap, mo: OBB, s: { w: number; d: number }, z: number): Vec3 {
+  return { x: mo.c.x + c.delta.x - s.w / 2, y: mo.c.y + c.delta.y - s.d / 2, z };
 }
 
 /** A free spot to drop an item when clicking a library tile: right of the composition, on the floor. */
