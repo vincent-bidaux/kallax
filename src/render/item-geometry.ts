@@ -7,6 +7,8 @@ import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeome
 import { KALLAX, kallaxOuter, localSize, validInserts } from '../core/kallax';
 import type { InsertType } from '../core/types';
 import type { Item, Size3 } from '../core/types';
+import { buildChair } from './furniture-chairs';
+import { buildDesk } from './furniture-desks';
 
 /**
  * A solid of revolution part (cylinder when ra === rb, cone frustum otherwise):
@@ -59,8 +61,10 @@ export function geometryKey(item: Item, holes?: WallHole[]): string {
     case 'door': return `door${s.w}x${s.d}x${s.h}${item.mirror ? 'M' : ''}`;
     case 'radiator': return `rad${s.w}x${s.d}x${s.h}`;
     case 'bed': return `bed${s.w}x${s.d}x${s.h}`;
-    case 'lamp': return `lamp${s.w}x${s.d}x${s.h}`;
-    case 'plant': return `plant${s.w}x${s.d}x${s.h}`;
+    case 'lamp': return `lamp:${item.variant ?? ''}:${s.w}x${s.d}x${s.h}`;
+    case 'plant': return `plant:${item.variant ?? ''}:${s.w}x${s.d}x${s.h}`;
+    case 'desk': return `desk:${item.variant ?? ''}:${s.w}x${s.d}x${s.h}`;
+    case 'chair': return `chair:${item.variant ?? ''}:${s.w}x${s.d}x${s.h}`; // colour = material, not geometry
     default: return `b${s.w}x${s.d}x${s.h}`; // box, square beam, skirting
   }
 }
@@ -77,6 +81,8 @@ function buildFor(key: string, item: Item, holes?: WallHole[]): ItemGeometry {
     case 'bed': return buildBed(key, s);
     case 'lamp': return buildLamp(key, s);
     case 'plant': return buildPlant(key, s);
+    case 'desk': return buildDesk(key, s, item.variant);
+    case 'chair': return buildChair(key, s, item.variant);
     default: return buildBlock(key, s);
   }
 }
@@ -317,7 +323,7 @@ function buildKallax(key: string, cols: number, rows: number, legs: boolean, ins
   };
 }
 
-function buildBlock(key: string, s: Size3): ItemGeometry {
+export function buildBlock(key: string, s: Size3): ItemGeometry {
   const w = Math.max(s.w, 0.1), d = Math.max(s.d, 0.1), h = Math.max(s.h, 0.1);
   const face = new THREE.BoxGeometry(w, d, h);
   face.translate(w / 2, d / 2, h / 2);

@@ -7,11 +7,27 @@ import type { BlockShape, Size3 } from './types';
 
 export type ObjectGroup = 'blocks' | 'house' | 'objects';
 
+export interface ObjectColor {
+  id: string;
+  /** i18n key of the colour name. */
+  labelKey: string;
+  /** Main colour (sRGB hex). */
+  hex: string;
+  /** Optional secondary colour (frame / legs / cushion…). */
+  hex2?: string;
+}
+
 export interface ObjectVariant {
   id: string;
   /** i18n key of the chip label. */
   labelKey: string;
   size: Size3;
+  /** Optional chip group (i18n key), e.g. plant style "Fournie" — UI shows chips grouped. */
+  groupKey?: string;
+  /** Colour options for this variant (first = default). */
+  colors?: ObjectColor[];
+  /** Product link (IKEA page…). */
+  url?: string;
 }
 
 export interface ObjectDef {
@@ -78,6 +94,11 @@ export const OBJECT_DEFS: ObjectDef[] = [
   },
 ];
 
+// Extra object definitions contributed by feature modules (chairs, desks…).
+import { CHAIR_DEF } from './objects-chairs';
+import { DESK_DEF } from './objects-desks';
+OBJECT_DEFS.push(DESK_DEF, CHAIR_DEF);
+
 export const OBJECT_BY_SHAPE = Object.fromEntries(OBJECT_DEFS.map(d => [d.shape, d])) as Record<BlockShape, ObjectDef>;
 export const OBJECT_GROUPS: { id: ObjectGroup; labelKey: string }[] = [
   { id: 'blocks', labelKey: 'obj.group.blocks' },
@@ -93,4 +114,10 @@ export function variantOf(shape: BlockShape, id: string | undefined): ObjectVari
 /** Door / window cut holes in walls. */
 export function cutsWalls(shape: BlockShape | undefined): boolean {
   return !!shape && !!OBJECT_BY_SHAPE[shape]?.cutsWalls;
+}
+
+export function colorOf(shape: BlockShape, variantId: string | undefined, colorId: string | undefined): ObjectColor | undefined {
+  const v = variantOf(shape, variantId);
+  if (!v?.colors?.length) return undefined;
+  return v.colors.find(c => c.id === colorId) ?? v.colors[0];
 }

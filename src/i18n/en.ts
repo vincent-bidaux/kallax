@@ -569,4 +569,9 @@ export const en: Record<keyof Dict, string> = {
   'insp.selSub.one': '{k} Kallax · {n} block',
   'insp.selSub.other': '{k} Kallax · {n} blocks',
   'insp.nKallax': '{n} Kallax',
+  // ── chairs (chairs agent) ──
+  'obj.chair': 'Chair',
+  // ── furniture (furniture agent) ──
+  'obj.desk': 'Desk',
+  // ── end furniture ──
 };

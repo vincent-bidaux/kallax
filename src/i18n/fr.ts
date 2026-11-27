@@ -567,6 +567,11 @@ export const fr = {
   'insp.selSub.one': '{k} Kallax · {n} bloc',
   'insp.selSub.other': '{k} Kallax · {n} blocs',
   'insp.nKallax': '{n} Kallax',
+  // ── chairs (chairs agent) ──
+  'obj.chair': 'Chaise',
+  // ── furniture (furniture agent) ──
+  'obj.desk': 'Bureau',
+  // ── end furniture ──
 } as const;
 
 export type Dict = typeof fr;

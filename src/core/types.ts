@@ -59,6 +59,8 @@ export interface BlockItem extends ItemBase {
   variant?: string;
   /** Door: handle on the left instead of the right (as seen from the front). */
   mirror?: boolean;
+  /** Colour option id for objects that have colours (e.g. IKEA chair colours). See ObjectVariant.colors. */
+  color?: string;
 }
 
 /**
@@ -68,7 +70,7 @@ export interface BlockItem extends ItemBase {
 export type BlockShape =
   | 'box' | 'cylinder' | 'square'
   | 'wall' | 'window' | 'door' | 'skirting' | 'radiator'
-  | 'bed' | 'lamp' | 'plant';
+  | 'bed' | 'lamp' | 'plant' | 'desk' | 'chair';
 
 export type Item = KallaxItem | BlockItem;
 
