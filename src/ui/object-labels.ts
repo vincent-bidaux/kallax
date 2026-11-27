@@ -1,9 +1,14 @@
 // Translated labels / default names of catalogue objects (core/objects.ts).
-import { OBJECT_BY_SHAPE, variantOf } from '../core/objects';
+import { OBJECT_BY_SHAPE, colorOf, variantOf } from '../core/objects';
 import type { BlockItem, BlockShape } from '../core/types';
 import { t, locale, type TKey } from '../core/i18n';
 
-const lower = (s: string) => s.charAt(0).toLocaleLowerCase(locale) + s.slice(1);
+/** Lower-case the first letter, unless the first word is an acronym / IKEA name ("GRÖNSTA", "LACK"). */
+const lower = (s: string) => {
+  const w = s.split(/[\s/]/)[0];
+  if (w.length > 1 && w === w.toLocaleUpperCase(locale) && w !== w.toLocaleLowerCase(locale)) return s;
+  return s.charAt(0).toLocaleLowerCase(locale) + s.slice(1);
+};
 
 /** Translated type label ("Porte", "Lit"…). Legacy blocks without a shape are bricks. */
 export function objLabel(shape: BlockShape | undefined): string {
@@ -18,11 +23,30 @@ export function variantLabel(shape: BlockShape | undefined, id: string | undefin
   return v ? t(v.labelKey as TKey) : '';
 }
 
-/** Default item name: type label, plus the variant ("Lit double 140" / "Double 140 bed"). */
+/** Translated type group of a variant ("Sur pied", "Tombante"…), or ''. */
+export function groupLabel(shape: BlockShape | undefined, id: string | undefined): string {
+  const g = shape ? variantOf(shape, id)?.groupKey : undefined;
+  return g ? t(g as TKey) : '';
+}
+
+/** Translated colour name of an item's colour option (default colour when unset), or ''. */
+export function colorLabel(shape: BlockShape | undefined, variant: string | undefined, color: string | undefined): string {
+  const c = shape ? colorOf(shape, variant, color) : undefined;
+  return c ? t(c.labelKey as TKey) : '';
+}
+
+/**
+ * Default item name: the variant's own name when it has one ("Lampadaire arc",
+ * "Bureau MICKE"), else type label + variant ("Lit double 140" / "Double 140 bed").
+ */
 export function autoName(shape: BlockShape | undefined, variant?: string): string {
+  const own = shape ? variantOf(shape, variant)?.nameKey : undefined;
+  if (own) return t(own as TKey);
   const type = objLabel(shape);
   const v = variantLabel(shape, variant);
   if (!v) return type;
+  // the variant already names the type ("GRÖNSTA chair", "DYVLINGE swivel easy chair"): use it as is
+  if (new RegExp(`(^|\\s)${type.toLocaleLowerCase(locale)}(\\s|$)`, 'u').test(v.toLocaleLowerCase(locale))) return v;
   return t('obj.variantName', { type, typeLower: lower(type), variant: v, variantLower: lower(v) });
 }
 

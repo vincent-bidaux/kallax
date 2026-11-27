@@ -150,7 +150,7 @@ export function buildLayers(host: HTMLElement) {
           role: 'treeitem', tabindex: '0', 'aria-level': '2', 'aria-selected': String(sel.has(it.id)),
           dataset: { id: it.id, key: `i:${it.id}` },
         },
-          h('span', { class: 'item-glyph' }, it.kind === 'kallax' ? icon('grid', 13) : icon(shapeIcon(it.shape), 13)),
+          h('span', { class: 'item-glyph' }, it.kind === 'kallax' ? icon('grid', 13) : icon(shapeIcon(it.shape, it.variant), 13)),
           nm,
           h('span', { class: 'item-dims' }, itemDims(it)),
           layer.locked ? h('span', { class: 'item-lock', 'aria-label': t('layers.lockedAria') }, icon('lock', 11)) : null,

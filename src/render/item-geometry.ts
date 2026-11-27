@@ -9,6 +9,7 @@ import type { InsertType } from '../core/types';
 import type { Item, Size3 } from '../core/types';
 import { buildChair } from './furniture-chairs';
 import { buildDesk } from './furniture-desks';
+import { buildBed, buildLamp, buildPlant } from './furniture-objects';
 
 /**
  * A solid of revolution part (cylinder when ra === rb, cone frustum otherwise):
@@ -79,8 +80,8 @@ function buildFor(key: string, item: Item, holes?: WallHole[]): ItemGeometry {
     case 'door': return buildDoor(key, s, !!item.mirror);
     case 'radiator': return buildRadiator(key, s);
     case 'bed': return buildBed(key, s);
-    case 'lamp': return buildLamp(key, s);
-    case 'plant': return buildPlant(key, s);
+    case 'lamp': return buildLamp(key, s, item.variant);
+    case 'plant': return buildPlant(key, s, item.variant);
     case 'desk': return buildDesk(key, s, item.variant);
     case 'chair': return buildChair(key, s, item.variant);
     default: return buildBlock(key, s);
@@ -110,17 +111,17 @@ export function releaseGeometry(g: ItemGeometry) {
 }
 
 // ── edge helpers (x, z = front plane coords; y = depth) ──────────────────
-function pushSeg(out: number[], ax: number, ay: number, az: number, bx: number, by: number, bz: number) {
+export function pushSeg(out: number[], ax: number, ay: number, az: number, bx: number, by: number, bz: number) {
   out.push(ax, ay, az, bx, by, bz);
 }
-function pushRect(out: number[], x0: number, z0: number, x1: number, z1: number, y: number) {
+export function pushRect(out: number[], x0: number, z0: number, x1: number, z1: number, y: number) {
   pushSeg(out, x0, y, z0, x1, y, z0);
   pushSeg(out, x1, y, z0, x1, y, z1);
   pushSeg(out, x1, y, z1, x0, y, z1);
   pushSeg(out, x0, y, z1, x0, y, z0);
 }
 /** Front rect, back rect and the 4 depth edges of an axis-aligned "tube" along Y. */
-function pushTube(out: number[], x0: number, z0: number, x1: number, z1: number, d: number) {
+export function pushTube(out: number[], x0: number, z0: number, x1: number, z1: number, d: number) {
   pushRect(out, x0, z0, x1, z1, 0);
   pushRect(out, x0, z0, x1, z1, d);
   pushSeg(out, x0, 0, z0, x0, d, z0);
@@ -130,7 +131,7 @@ function pushTube(out: number[], x0: number, z0: number, x1: number, z1: number,
 }
 
 /** 12 edges of an axis-aligned box. */
-function pushBox(out: number[], x0: number, y0: number, z0: number, x1: number, y1: number, z1: number) {
+export function pushBox(out: number[], x0: number, y0: number, z0: number, x1: number, y1: number, z1: number) {
   for (const y of [y0, y1]) {
     pushSeg(out, x0, y, z0, x1, y, z0); pushSeg(out, x1, y, z0, x1, y, z1);
     pushSeg(out, x1, y, z1, x0, y, z1); pushSeg(out, x0, y, z1, x0, y, z0);
@@ -138,7 +139,7 @@ function pushBox(out: number[], x0: number, y0: number, z0: number, x1: number, 
   pushSeg(out, x0, y0, z0, x0, y1, z0); pushSeg(out, x1, y0, z0, x1, y1, z0);
   pushSeg(out, x1, y0, z1, x1, y1, z1); pushSeg(out, x0, y0, z1, x0, y1, z1);
 }
-function boxGeo(x0: number, y0: number, z0: number, x1: number, y1: number, z1: number): THREE.BufferGeometry {
+export function boxGeo(x0: number, y0: number, z0: number, x1: number, y1: number, z1: number): THREE.BufferGeometry {
   const g = new THREE.BoxGeometry(x1 - x0, y1 - y0, z1 - z0);
   g.translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
   return g.toNonIndexed();
@@ -210,7 +211,7 @@ function underframe(W: number, D: number, L: number) {
   return { faces: boxes.map(b => boxGeo(...b)), edges };
 }
 
-function lineGeo(positions: number[], withDistances = false): LineSegmentsGeometry {
+export function lineGeo(positions: number[], withDistances = false): LineSegmentsGeometry {
   const g = new LineSegmentsGeometry();
   g.setPositions(new Float32Array(positions));
   if (withDistances) {
@@ -345,7 +346,7 @@ export function buildBlock(key: string, s: Size3): ItemGeometry {
 const CYL_SEGMENTS = 64;
 
 /** Circle of radius r around `c`, in the plane perpendicular to the unit axis `u`. */
-function pushCircle(out: number[], c: THREE.Vector3, u: THREE.Vector3, r: number, seg = CYL_SEGMENTS) {
+export function pushCircle(out: number[], c: THREE.Vector3, u: THREE.Vector3, r: number, seg = CYL_SEGMENTS) {
   const e1 = Math.abs(u.z) < 0.9 ? new THREE.Vector3(0, 0, 1).cross(u).normalize() : new THREE.Vector3(1, 0, 0).cross(u).normalize();
   const e2 = u.clone().cross(e1);
   for (let i = 0; i < seg; i++) {
@@ -357,7 +358,7 @@ function pushCircle(out: number[], c: THREE.Vector3, u: THREE.Vector3, r: number
 }
 
 /** Closed frustum mesh along local Z (vertical revolved parts), base at z0 (radius r0), top at z1 (radius r1). */
-function frustumZ(cx: number, cy: number, z0: number, z1: number, r0: number, r1: number, seg = 48): THREE.BufferGeometry {
+export function frustumZ(cx: number, cy: number, z0: number, z1: number, r0: number, r1: number, seg = 48): THREE.BufferGeometry {
   const g = new THREE.CylinderGeometry(r1, r0, z1 - z0, seg, 1, false);
   g.rotateX(Math.PI / 2); // +Y (top) → +Z
   g.translate(cx, cy, (z0 + z1) / 2);
@@ -365,7 +366,7 @@ function frustumZ(cx: number, cy: number, z0: number, z1: number, r0: number, r1
 }
 
 /** Keep position + normal only and merge (non-indexed) so heterogeneous parts can be combined. */
-function mergeFaces(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
+export function mergeFaces(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
   const list = parts.map(p => {
     const g = p.index ? p.toNonIndexed() : p;
     for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'normal') g.deleteAttribute(name);
@@ -518,14 +519,14 @@ function buildWindow(key: string, s: Size3): ItemGeometry {
 // ── house & objects ──────────────────────────────────────────────────────
 
 /** Horizontal rectangle (x, y) at height z. */
-function pushRectXY(out: number[], x0: number, y0: number, x1: number, y1: number, z: number) {
+export function pushRectXY(out: number[], x0: number, y0: number, x1: number, y1: number, z: number) {
   pushSeg(out, x0, y0, z, x1, y0, z);
   pushSeg(out, x1, y0, z, x1, y1, z);
   pushSeg(out, x1, y1, z, x0, y1, z);
   pushSeg(out, x0, y1, z, x0, y0, z);
 }
 /** Horizontal rounded rectangle at height z (corner radius r). */
-function pushRoundRectXY(out: number[], x0: number, y0: number, x1: number, y1: number, z: number, r: number, seg = 5) {
+export function pushRoundRectXY(out: number[], x0: number, y0: number, x1: number, y1: number, z: number, r: number, seg = 5) {
   r = Math.min(r, (x1 - x0) / 2, (y1 - y0) / 2);
   const pts: [number, number][] = [];
   const corner = (cx: number, cy: number, a0: number) => {
@@ -543,12 +544,7 @@ function pushRoundRectXY(out: number[], x0: number, y0: number, x1: number, y1: 
     pushSeg(out, p[0], p[1], z, q[0], q[1], z);
   }
 }
-/** Horizontal ring of 4 segments around the box sides at height z. */
-function pushBelt(out: number[], w: number, d: number, z: number) {
-  pushRectXY(out, 0, 0, w, d, z);
-}
-
-type BoxSpec = [number, number, number, number, number, number];
+export type BoxSpec = [number, number, number, number, number, number];
 
 /**
  * Door leaf: slab w × d × h with a subtle panel moulding line on both faces
@@ -620,130 +616,4 @@ function buildRadiator(key: string, s: Size3): ItemGeometry {
   const face = boxGeo(0, 0, 0, w, d, h);
   face.computeBoundingSphere();
   return { key, size: { w, d, h }, face, outer: lineGeo(outer), inner: lineGeo(inner), basket: null, all: lineGeo([...outer, ...inner], true), refs: 0 };
-}
-
-/**
- * Bed: 20 cm slab (base + mattress seam), mattress top edge inset 1 cm,
- * pillows at the head end (+Y) drawn as rounded outlines on the top face
- * (they stay inside the item box) and a turned-down duvet ~1/3 from the head.
- */
-function buildBed(key: string, s: Size3): ItemGeometry {
-  const w = Math.max(s.w, 40), d = Math.max(s.d, 60), h = Math.max(s.h, 5);
-  const outer: number[] = [];
-  pushTube(outer, 0, 0, w, h, d);
-  const inner: number[] = [];
-  // mattress top edge + base / mattress seam
-  pushRectXY(inner, 1, 1, w - 1, d - 1, h);
-  const seam = Math.min(7, h * 0.35);
-  pushBelt(inner, w, d, seam);
-  // pillows
-  const pd = Math.min(30, d / 4), py1 = d - 4, py0 = py1 - pd;
-  const pillows: [number, number][] = [];
-  if (w < 120) {
-    const pw = THREE.MathUtils.clamp(w * 0.56, 30, 55);
-    pillows.push([(w - pw) / 2, (w + pw) / 2]);
-  } else {
-    const pw = THREE.MathUtils.clamp(w * 0.36, 45, 65), gap = w * 0.08;
-    const m = (w - 2 * pw - gap) / 2;
-    pillows.push([m, m + pw], [w - m - pw, w - m]);
-  }
-  for (const [x0, x1] of pillows) {
-    pushRoundRectXY(inner, x0, py0, x1, py1, h, 6);
-    pushRoundRectXY(inner, x0 + 3, py0 + 3, x1 - 3, py1 - 3, h, 4);
-  }
-  // duvet: fold line ~1/3 from the head, turned-down band towards the head, drops on the sides
-  const yf = d - d / 3, yb = Math.min(yf + 9, py0 - 3);
-  pushSeg(inner, 1, yf, h, w - 1, yf, h);
-  pushSeg(inner, 1, yb, h, w - 1, yb, h);
-  for (const x of [0, w]) pushSeg(inner, x, yf, h, x, yf, seam);
-  const face = boxGeo(0, 0, 0, w, d, h);
-  face.computeBoundingSphere();
-  return { key, size: { w, d, h }, face, outer: lineGeo(outer), inner: lineGeo(inner), basket: null, all: lineGeo([...outer, ...inner], true), refs: 0 };
-}
-
-/** Revolved parts along local Z → faces, circles (outer edges) and frusta (view-dependent generators). */
-function revolved(parts: { z0: number; z1: number; r0: number; r1: number }[], cx: number, cy: number) {
-  const faces: THREE.BufferGeometry[] = [];
-  const circles: number[] = [];
-  const frusta: Frustum[] = [];
-  const up = new THREE.Vector3(0, 0, 1);
-  for (const p of parts) {
-    faces.push(frustumZ(cx, cy, p.z0, p.z1, p.r0, p.r1));
-    const a = new THREE.Vector3(cx, cy, p.z0), b = new THREE.Vector3(cx, cy, p.z1);
-    pushCircle(circles, a, up, p.r0, 48);
-    pushCircle(circles, b, up, p.r1, 48);
-    frusta.push({ a, b, ra: p.r0, rb: p.r1 });
-  }
-  return { faces, circles, frusta };
-}
-
-/** Table lamp: base disc, thin stem, truncated-cone shade (wider at the bottom). */
-function buildLamp(key: string, s: Size3): ItemGeometry {
-  const w = Math.max(s.w, 6), d = Math.max(s.d, 6), h = Math.max(s.h, 10);
-  const R = Math.min(w, d) / 2;
-  const baseH = THREE.MathUtils.clamp(h * 0.06, 1.4, 3);
-  const shadeH = h * 0.44;
-  const stemR = THREE.MathUtils.clamp(R * 0.06, 0.45, 0.9);
-  const rv = revolved([
-    { z0: 0, z1: baseH, r0: R * 0.6, r1: R * 0.56 },
-    { z0: baseH, z1: h - shadeH * 0.4, r0: stemR, r1: stemR },
-    { z0: h - shadeH, z1: h, r0: R, r1: R * 0.6 },
-  ], w / 2, d / 2);
-  const face = mergeFaces(rv.faces);
-  return { key, size: { w, d, h }, face, outer: lineGeo(rv.circles), inner: null, basket: null, all: lineGeo(rv.circles, true), frusta: rv.frusta, refs: 0 };
-}
-
-/**
- * Potted plant: truncated-cone pot (~40 % of the height) with a rim, and a
- * stylised low-poly foliage made of overlapping dodecahedra (edges from
- * EdgesGeometry, 20° threshold → a clean faceted vector drawing). Everything
- * stays inside the item box.
- */
-function buildPlant(key: string, s: Size3): ItemGeometry {
-  const w = Math.max(s.w, 8), d = Math.max(s.d, 8), h = Math.max(s.h, 12);
-  const W = Math.min(w, d);
-  const potH = h * 0.4;
-  const rimH = THREE.MathUtils.clamp(h * 0.045, 1.2, 3);
-  const rTop = W * 0.3, rBot = rTop * 0.74;
-  const rv = revolved([
-    { z0: 0, z1: potH - rimH, r0: rBot, r1: rTop },
-    { z0: potH - rimH, z1: potH, r0: rTop + 0.7, r1: rTop + 0.7 },
-  ], w / 2, d / 2);
-
-  // foliage zone: [0,w] × [0,d] × [z0, h]
-  const z0 = potH * 0.86, Hf = h - z0;
-  const k = THREE.MathUtils.clamp(Hf / W, 1, 1.45);          // vertical stretch for tall plants
-  const R0 = Math.min(W / 2, Hf / (2 * k));
-  // (dx, dy) in half-widths, dz in [0,1] of the zone, radius in R0, rotation seed
-  const blobs: [number, number, number, number, number][] = [
-    [0.0, 0.08, 0.62, 0.74, 0.3],
-    [-0.42, -0.12, 0.38, 0.54, 1.7],
-    [0.44, 0.1, 0.42, 0.52, 2.9],
-    [0.08, -0.42, 0.3, 0.48, 4.1],
-    [-0.08, 0.4, 0.34, 0.46, 5.3],
-  ];
-  const leafFaces: THREE.BufferGeometry[] = [];
-  const leafEdges: number[] = [];
-  for (const [dx, dy, dz, rr, seed] of blobs) {
-    const r = R0 * rr, rz = r * k;
-    const cx = THREE.MathUtils.clamp(w / 2 + dx * W / 2, r, w - r);
-    const cy = THREE.MathUtils.clamp(d / 2 + dy * W / 2, r, d - r);
-    const cz = THREE.MathUtils.clamp(z0 + dz * Hf, z0 + rz * 0.6, h - rz);
-    const g = new THREE.DodecahedronGeometry(1, 0);
-    g.rotateX(seed * 0.7); g.rotateZ(seed * 1.3); g.rotateY(seed * 0.4);
-    // vertices stay on the unit sphere whatever the rotation: the box bound holds
-    g.scale(r, r, rz);
-    g.translate(cx, cy, cz);
-    g.computeVertexNormals();
-    leafFaces.push(g);
-    const eg = new THREE.EdgesGeometry(g, 20);
-    leafEdges.push(...(eg.getAttribute('position').array as Float32Array));
-    eg.dispose();
-  }
-  const face = mergeFaces([...rv.faces, ...leafFaces]);
-  return {
-    key, size: { w, d, h }, face,
-    outer: lineGeo(rv.circles), inner: lineGeo(leafEdges), basket: null,
-    all: lineGeo([...rv.circles, ...leafEdges], true), frusta: rv.frusta, refs: 0,
-  };
 }

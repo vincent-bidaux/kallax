@@ -78,7 +78,7 @@ export function faceSetOf(item: Item): FaceSet {
   if (item.kind === 'kallax') return 'kallax';
   switch (item.shape) {
     case 'wall': return 'wall';
-    case 'door': case 'skirting': case 'radiator': case 'bed': case 'lamp': case 'plant': return 'plain';
+    case 'door': case 'skirting': case 'radiator': case 'bed': case 'lamp': case 'plant': case 'chair': case 'desk': return 'plain';
     default: return 'block'; // box, beams, window
   }
 }
@@ -320,6 +320,15 @@ export class MaterialLibrary {
     return this.colourSet(`b:${variant ?? 'naturel'}`, b.color, b.line);
   }
 
+  /**
+   * Materials in an object's own colour (IKEA chair colours…), for the
+   * "finish colours" mode: face in `hex`, edges in a darker / lighter tone of it.
+   */
+  objectFinish(hex: string): FinishMaterials {
+    const lightBg = new THREE.Color(this.theme.bg).getHSL({ h: 0, s: 0, l: 0 }).l > 0.5;
+    return this.colourSet(`o:${hex}`, hex, objectLineColor(hex, lightBg));
+  }
+
   private colourSet(key: string, color: string, line: string): FinishMaterials {
     const hit = this.finishSets.get(key);
     if (hit) return hit;
@@ -475,4 +484,22 @@ function finishLineColor(t: ThemeTokens, line: string, face: string, mode: Rende
   }
   if (outer && luminance(l) > luminance(f) && contrast(l, bg) < 2) l.lerp(new THREE.Color(t.line), 0.25);
   return l;
+}
+
+/**
+ * Edge tone for an object colour (same family, enough contrast): a darker
+ * shade on light / mid colours (white → grey, ash → brown, orange → rust).
+ * Dark colours (black upholstery, black frames): a lighter tint on a dark
+ * drawing background (blueprint), like the KALLAX black-brown finish, but a
+ * near-black on a light one (paper), where light edges would read as a halo.
+ */
+export function objectLineColor(hex: string, lightBg = false): string {
+  const c = new THREE.Color(hex);
+  const s = c.getRGB({ r: 0, g: 0, b: 0 }, THREE.SRGBColorSpace);
+  const perceived = 0.299 * s.r + 0.587 * s.g + 0.114 * s.b;
+  const k = lightBg && perceived <= 0.36 ? 0.35 : 0.42;
+  const out = perceived > 0.36 || lightBg
+    ? new THREE.Color().setRGB(s.r * k, s.g * k, s.b * k, THREE.SRGBColorSpace)
+    : new THREE.Color().setRGB(s.r + (1 - s.r) * 0.62, s.g + (1 - s.g) * 0.62, s.b + (1 - s.b) * 0.6, THREE.SRGBColorSpace);
+  return '#' + out.getHexString(THREE.SRGBColorSpace);
 }

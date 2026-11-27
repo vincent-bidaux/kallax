@@ -1557,3 +1557,27 @@ html.theme-paper .rot-ax.ax-z { color: #0090ff; }
   .tb-sep { margin: 0 3px; }
   .seg-view .seg-btn, .seg-proj .seg-btn { padding: 0 9px; }
 }
+
+/* ── object variants & colours (furniture agent) ──────────── */
+.variant-picker { display: grid; gap: 8px; }
+.variant-picker .variant-groups { width: 100%; }
+.variant-picker .chips { margin: 0; }
+.variant-note { margin: 8px 2px 0; font-size: 11px; line-height: 1.4; color: var(--text-3); }
+.color-picker .finish-head { margin-bottom: 7px; }
+.color-picker .color-swatches { gap: 8px; }
+.obj-params .color-picker { margin-top: 2px; }
+.obj-params .color-picker .insp-title { font-size: 11.5px; }
+.obj-params .color-picker .finish-head { padding-right: 2px; }
+.obj-swatch { width: 22px; height: 22px; }
+.obj-swatch.light { box-shadow: inset 0 0 0 .5px var(--swatch-ring-light), 0 1px 2px rgba(0, 0, 0, .18); }
+.obj-swatch.two { background: linear-gradient(135deg, var(--sw) 0 54%, var(--sw2) 54% 100%); }
+.color-picker.disabled { opacity: .6; }
+.product-link-row { margin-top: 8px; }
+.product-link {
+  display: inline-flex; align-items: center; gap: 4px; padding: 3px 6px; margin-left: -6px; border-radius: 6px;
+  font-size: 12px; font-weight: 500; color: var(--accent-text); text-decoration: none;
+  transition: background var(--t-fast) ease;
+}
+.product-link:hover { background: var(--fill-2); }
+.product-link:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus); }
+.obj-group .obj-types .obj-type span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

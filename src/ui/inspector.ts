@@ -12,8 +12,10 @@ import { bomList, bomText, buildTotalFooter, currentBom } from './bom';
 import * as cmd from '../interaction/commands';
 import { MOD } from './dom';
 import { t, tn, type TKey } from '../core/i18n';
-import { OBJECT_BY_SHAPE, variantOf } from '../core/objects';
-import { autoName, isAutoName, objLabel, variantLabel } from './object-labels';
+import { OBJECT_BY_SHAPE, colorOf, variantOf } from '../core/objects';
+import { autoName, groupLabel, isAutoName, objLabel, variantLabel } from './object-labels';
+import { colorPicker, productLink, variantNote, variantPicker, type ColorPicker, type VariantPicker } from './variant-picker';
+import { collisionBoxes } from '../interaction/placement';
 
 interface Panel { el: HTMLElement; update(): void }
 
@@ -138,7 +140,7 @@ function itemPanel(id: string): Panel {
 
   const nameField = textField({ value: it0.name, ariaLabel: t('insp.nameAria'), cls: 'hero-name', onCommit: v => store.patchItem(id, { name: v }) });
   const typeLabel = h('div', { class: 'hero-sub' });
-  const heroIcon = h('div', { class: 'hero-icon' }, icon(isK ? 'grid' : shapeIcon(it0.shape), 22));
+  const heroIcon = h('div', { class: 'hero-icon' }, icon(isK ? 'grid' : shapeIcon(it0.shape, it0.kind === 'block' ? it0.variant : undefined), 22));
   const lockBanner = h('div', { class: 'banner', role: 'note' }, icon('lock', 13), t('insp.lockedBanner'));
   const overlapBanner = h('div', { class: 'banner warn', role: 'alert' }, icon('warning', 13), t('insp.overlap'));
   const dimsHost = h('div');
@@ -169,7 +171,10 @@ function itemPanel(id: string): Panel {
   let fw: NumberField | null = null, fd: NumberField | null = null, fh: NumberField | null = null;
   let sizeGroup: HTMLElement;
   let handleSeg: ReturnType<typeof segmented<'r' | 'l'>> | null = null;
-  let variantChips: { sync(v: string | undefined): void; setDisabled(d: boolean): void } | null = null;
+  let variantPick: VariantPicker | null = null;
+  let colorP: ColorPicker | null = null;
+  const variantNoteEl = h('p', { class: 'hint variant-note' });
+  const linkHost = h('div', { class: 'product-link-row' });
   if (it0.kind === 'kallax') {
     colsSt = stepper({ label: t('insp.columns'), value: it0.cols, min: 1, max: MAX_CELLS, onChange: v => store.update(d => { const x = d.items.find(i => i.id === id); if (x && x.kind === 'kallax') { x.name = renameKallax(x, x.cols, x.rows, v, x.rows); x.cols = v; } }) });
     rowsSt = stepper({ label: t('insp.rows'), value: it0.rows, min: 1, max: MAX_CELLS, onChange: v => store.update(d => { const x = d.items.find(i => i.id === id); if (x && x.kind === 'kallax') { x.name = renameKallax(x, x.cols, x.rows, x.cols, v); x.rows = v; } }) });
@@ -214,7 +219,7 @@ function itemPanel(id: string): Panel {
     fh = numberField({ label: t('dim.h'), axis: 'z', ariaLabel: t('aria.height'), value: it0.size.h, step: 1, min: 1, suffix: 'cm', onCommit: v => patchSize('h', v) });
     sizeGroup = group(t('insp.wallPlane'), h('div', { class: 'fields-2' }, fw.el, fh.el));
   } else if (it0.shape && OBJECT_BY_SHAPE[it0.shape]?.variants) {
-    // preset objects (bed, lamp, plant): pick a size, no free dimensions
+    // preset objects (bed, lamp, plant, desk, chair): pick a type / size, no free dimensions
     const shape = it0.shape;
     const setVariant = (vid: string) => store.update(d => {
       const x = d.items.find(i => i.id === id);
@@ -225,19 +230,22 @@ function itemPanel(id: string): Panel {
       // position is the min corner: it stays put, the object grows / shrinks from there
       x.variant = v.id;
       x.size = { ...v.size };
+      if (v.colors?.length) { if (!v.colors.some(c => c.id === x.color)) x.color = v.colors[0].id; }
+      else delete x.color;
       if (wasAuto) x.name = autoName(x.shape, v.id);
     });
-    const chipBtns = OBJECT_BY_SHAPE[shape].variants!.map(v => {
-      const el = h('button', { type: 'button', class: 'chip' }, t(v.labelKey as TKey));
-      tip(el, `${fmtCm(v.size.w)} × ${fmtCm(v.size.d)} × ${fmtCm(v.size.h)} cm`);
-      el.addEventListener('click', () => setVariant(v.id));
-      return { el, id: v.id };
-    });
-    variantChips = {
-      sync(vid) { for (const c of chipBtns) { const on = c.id === vid; c.el.classList.toggle('on', on); c.el.setAttribute('aria-pressed', String(on)); } },
-      setDisabled(d) { for (const c of chipBtns) c.el.disabled = d; },
-    };
-    sizeGroup = group(t('insp.variant'), h('div', { class: 'chips insp-chips', role: 'group', 'aria-label': t('obj.variantsAria') }, chipBtns.map(c => c.el)));
+    variantPick = variantPicker({ shape, value: it0.variant, onPick: setVariant, cls: 'insp-variants' });
+    sizeGroup = group(t('insp.variant'), variantPick.el, variantNoteEl, linkHost);
+    if (OBJECT_BY_SHAPE[shape].variants!.some(v => v.colors?.length)) {
+      colorP = colorPicker({
+        cls: 'insp-group',
+        onPick: cid => {
+          const cur = store.getItem(id);
+          if (!cur || cur.kind !== 'block' || store.isLocked(cur) || colorOf(shape, cur.variant, cur.color)?.id === cid && cur.color === cid) return;
+          store.update(d => { const x = d.items.find(i => i.id === id); if (x && x.kind === 'block') x.color = cid; });
+        },
+      });
+    }
   } else {
     const patchSize = (k: 'w' | 'd' | 'h', v: number) => store.update(d => {
       const x = d.items.find(i => i.id === id); if (x && x.kind === 'block') x.size = { ...x.size, [k]: v };
@@ -288,6 +296,7 @@ function itemPanel(id: string): Panel {
     group(t('common.position'), h('div', { class: 'fields-3' }, fx.el, fy.el, fz.el)),
     group(t('insp.rotation'), h('div', { class: 'rot-rows' }, rotRows.map(r => r.row))),
     sizeGroup,
+    ...(colorP ? [colorP.el] : []),
     ...(finishP ? [finishP.el] : []),
     group(t('common.layer'), layerWrap),
     group(t('common.duplicate'), dupBtns),
@@ -298,7 +307,7 @@ function itemPanel(id: string): Panel {
   if (colsSt) editables.push(colsSt, rowsSt!);
   for (const f of [fw, fd, fh]) if (f) editables.push(f);
   if (handleSeg) editables.push(handleSeg);
-  if (variantChips) editables.push(variantChips);
+  if (variantPick) editables.push(variantPick);
 
   const update = () => {
     const it = store.getItem(id);
@@ -333,10 +342,21 @@ function itemPanel(id: string): Panel {
     } else if (it.shape === 'wall') {
       typeLabel.textContent = t('insp.typeWall');
       fw!.set(it.size.w); fh!.set(it.size.h);
-    } else if (variantChips) {
+    } else if (variantPick) {
       const v = variantOf(it.shape!, it.variant);
-      typeLabel.textContent = `${objLabel(it.shape)} · ${variantLabel(it.shape, it.variant)}`;
-      variantChips.sync(v?.id);
+      // type · group · variant ("Lampe · Sur pied · Arc 190"); the group is skipped when it repeats the type ("Bureau · Bureaux")
+      const type = objLabel(it.shape), grp = groupLabel(it.shape, it.variant);
+      const sameRoot = grp && grp.toLocaleLowerCase().startsWith(type.toLocaleLowerCase().slice(0, 4));
+      typeLabel.textContent = [type, sameRoot ? '' : grp, variantLabel(it.shape, it.variant)].filter(Boolean).join(' · ');
+      variantPick.set(v?.id);
+      const note = variantNote(v);
+      variantNoteEl.textContent = note;
+      variantNoteEl.hidden = !note;
+      const link = productLink(v?.url);
+      linkHost.replaceChildren(...(link ? [link] : []));
+      linkHost.hidden = !link;
+      colorP?.set(v?.colors, it.color, locked);
+      heroIcon.replaceChildren(icon(shapeIcon(it.shape, it.variant), 22));
     } else {
       typeLabel.textContent = it.shape === 'door'
         ? `${objLabel(it.shape)} · ${it.mirror ? t('obj.handleLeftLong') : t('obj.handleRightLong')}`
@@ -366,8 +386,8 @@ function itemPanel(id: string): Panel {
     delBtn.disabled = locked;
     layerSel.disabled = false;
     // overlap
-    const b = itemBox(it);
-    overlapBanner.hidden = !store.visibleItems().some(o => o.id !== it.id && boxesOverlap(b, itemBox(o)));
+    const mine = collisionBoxes(it);
+    overlapBanner.hidden = !store.visibleItems().some(o => o.id !== it.id && collisionBoxes(o).some(ob => mine.some(b => boxesOverlap(b, ob))));
   };
   update();
   return { el, update };
@@ -492,7 +512,7 @@ export function buildInspector(host: HTMLElement) {
 
 export type { Rotation };
 
-/** Glyph of a block shape (catalogue icon; legacy shape-less blocks are bricks). */
-export function shapeIcon(shape: BlockShape | undefined): string {
-  return OBJECT_BY_SHAPE[shape ?? 'box']?.icon ?? 'box';
+/** Glyph of a block shape (variant / catalogue icon; legacy shape-less blocks are bricks). */
+export function shapeIcon(shape: BlockShape | undefined, variant?: string): string {
+  return (shape && variantOf(shape, variant)?.icon) || (OBJECT_BY_SHAPE[shape ?? 'box']?.icon ?? 'box');
 }

@@ -9,8 +9,9 @@ import { numberField, segmented, tip } from './controls';
 import { icon } from './icons';
 import { INSERT_NAMES, fmtEur, fmtEurShort, frameMinPrice, insertMinPrice } from '../core/finishes';
 import { t, locale, type TKey } from '../core/i18n';
-import { OBJECT_DEFS, OBJECT_GROUPS, OBJECT_BY_SHAPE, variantOf, type ObjectGroup } from '../core/objects';
-import { autoName, baseZOf, objLabel } from './object-labels';
+import { OBJECT_DEFS, OBJECT_GROUPS, OBJECT_BY_SHAPE, colorOf, variantOf, type ObjectGroup } from '../core/objects';
+import { autoName, baseZOf, colorLabel, objLabel } from './object-labels';
+import { colorPicker, variantNote, variantPicker } from './variant-picker';
 import { beginLibraryDrag } from '../interaction/drag-drop';
 import { freeSpot } from '../interaction/placement';
 import { ui } from '../interaction/context';
@@ -171,12 +172,14 @@ interface Draft {
   mirror: boolean;
   /** Name override (window presets: "Porte-fenêtre"). */
   name?: string;
+  /** Colour option id (variants with `colors`). */
+  color?: string;
 }
 
 const TYPE_TIPS: Partial<Record<BlockShape, TKey>> = {
   box: 'obj.brickTip', cylinder: 'obj.roundTip', square: 'obj.squareTip',
   wall: 'obj.wallTip', window: 'obj.windowTip', door: 'obj.doorTip', skirting: 'obj.skirtingTip', radiator: 'obj.radiatorTip',
-  bed: 'obj.bedTip', lamp: 'obj.lampTip', plant: 'obj.plantTip',
+  bed: 'obj.bedTip', lamp: 'obj.lampTip', plant: 'obj.plantTip', desk: 'obj.deskTip', chair: 'obj.chairTip',
 };
 
 const WINDOW_PRESETS = [
@@ -220,6 +223,8 @@ function buildObjectGroups(): HTMLElement[] {
     else if (shape === 'wall') it.size = { w: o.w, d: 0, h: o.h };
     const v = variantOf(shape, o.variant);
     if (v && OBJECT_BY_SHAPE[shape].variants) { it.variant = v.id; it.size = { ...v.size }; }
+    const c = colorOf(shape, o.variant, o.color);
+    if (c) it.color = c.id;
     if (shape === 'door' && o.mirror) it.mirror = true;
     return it;
   };
@@ -270,9 +275,13 @@ function buildObjectGroups(): HTMLElement[] {
         num(t('dim.d'), t('aria.frameDepth'), o.d, v => o.d = v, { min: 2, axis: 'y' }),
         num(t('dim.h'), t('aria.height'), o.h, v => o.h = v, { min: 20, axis: 'z' })));
     } else if (def.variants) {
-      nodes.push(chips(t('obj.variantsAria'), def.variants, v => t(v.labelKey as TKey), v => v.id === o.variant,
-        v => { o.variant = v.id; },
-        v => `${fmtCm(v.size.w)} × ${fmtCm(v.size.d)} × ${fmtCm(v.size.h)} cm`));
+      nodes.push(variantPicker({ shape, value: o.variant, onPick: id => { o.variant = id; render(); } }).el);
+      const v = variantOf(shape, o.variant);
+      if (v?.colors?.length) {
+        const cp = colorPicker({ cls: 'lib-colors', onPick: id => { o.color = id; cp.set(v.colors, id); updateTile(); } });
+        cp.set(v.colors, colorOf(shape, v.id, o.color)?.id);
+        nodes.push(cp.el);
+      }
     } else {
       nodes.push(whd(o, shape === 'door' ? 20 : 0.5));
       if (shape === 'door') nodes.push(inlineRow(t('obj.handle'), segmented<'r' | 'l'>({
@@ -303,7 +312,8 @@ function buildObjectGroups(): HTMLElement[] {
       if (shape === 'window') extra = t('obj.sill');
       else if (shape === 'door') extra = o.mirror ? t('obj.handleLeftLong') : t('obj.handleRightLong');
       else if (def.baseZ) extra = t('obj.aboveFloor', { cm: fmtCm(def.baseZ) });
-      preview.replaceChildren(shape === 'box' ? boxIsoSVG(s.w, s.d, s.h) : icon(def.icon, 40));
+      else if (v) extra = [variantNote(v), colorLabel(shape, v.id, o.color)].filter(Boolean).join(' · ');
+      preview.replaceChildren(shape === 'box' ? boxIsoSVG(s.w, s.d, s.h) : icon(v?.icon ?? def.icon, 40));
     }
     tileDims.textContent = dims;
     tileExtra.textContent = extra;

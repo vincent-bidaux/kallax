@@ -726,15 +726,15 @@ export class Viewport implements ViewportAPI {
     }
   }
 
-  /** View-dependent outlines of revolved parts (round beams, lamps, pots). */
+  /** View-dependent outlines of revolved parts (round beams, lamps, pots) and smooth meshes (chair shells, cushions). */
   private updateSilhouettes() {
     const persp = this.camera === this.persp ? this.camera.position : null;
     // Parallel projections (incl. the sheared cavalier): the projection direction
     // is the ray through any pixel, obtained by unprojecting NDC near/far.
     const n = _v1.set(0, 0, -1).unproject(this.camera);
     const dir = _v2.set(0, 0, 1).unproject(this.camera).sub(n).normalize();
-    for (const v of this.views.values()) if (v.geo.frusta) v.updateSilhouette(dir, persp);
-    if (this.ghost?.geo.frusta) this.ghost.updateSilhouette(dir, persp);
+    for (const v of this.views.values()) if (v.geo.frusta || v.geo.face.userData.silEdges) v.updateSilhouette(dir, persp);
+    if (this.ghost && (this.ghost.geo.frusta || this.ghost.geo.face.userData.silEdges)) this.ghost.updateSilhouette(dir, persp);
   }
 
   private resize() {

@@ -10,6 +10,7 @@ import { store } from '../core/store';
 import { ui } from './context';
 import { fmtCm } from '../core/kallax';
 import { t } from '../core/i18n';
+import { variantOf } from '../core/objects';
 
 type Axis = 'x' | 'y' | 'z';
 const AXES: Axis[] = ['x', 'y', 'z'];
@@ -86,10 +87,46 @@ function boxAt(item: Item, p: Vec3): Box3 {
   return { min: { ...p }, max: { x: p.x + s.w, y: p.y + s.d, z: p.z + s.h } };
 }
 
+/**
+ * Hanging objects (trailing plants, see ObjectVariant.hang): height of the
+ * resting plane above the item's base, and the world side of the front strip
+ * that may hang below it. Null for every other item (and tilted ones).
+ */
+export function hangOf(item: Item): { hang: number; depth: number; axis: 'x' | 'y'; side: -1 | 1 } | null {
+  if (item.kind !== 'block' || !item.shape || (item.tilt && (item.tilt.x || item.tilt.y))) return null;
+  const v = variantOf(item.shape, item.variant);
+  if (!v?.hang) return null;
+  const depth = v.hangDepth ?? 0;
+  // local front (−Y) after the rotation about Z (CCW): 0 → −Y, 90 → +X, 180 → +Y, 270 → −X
+  switch (item.rotation) {
+    case 90: return { hang: v.hang, depth, axis: 'x', side: 1 };
+    case 180: return { hang: v.hang, depth, axis: 'y', side: 1 };
+    case 270: return { hang: v.hang, depth, axis: 'x', side: -1 };
+    default: return { hang: v.hang, depth, axis: 'y', side: -1 };
+  }
+}
+
+/**
+ * Boxes used for collisions: the item box, or for hanging objects the body
+ * above the resting plane + the front strip below it (so a trailing plant can
+ * sit on a shelf with its stems falling in front of the shelf).
+ */
+export function collisionBoxes(item: Item, p: Vec3 = item.position): Box3[] {
+  const b = boxAt(item, p);
+  const hg = hangOf(item);
+  if (!hg) return [b];
+  const zr = b.min.z + hg.hang;
+  const body: Box3 = { min: { ...b.min, z: zr }, max: { ...b.max } };
+  const strip: Box3 = { min: { ...b.min }, max: { ...b.max, z: zr } };
+  if (hg.side < 0) strip.max[hg.axis] = b.min[hg.axis] + hg.depth;
+  else strip.min[hg.axis] = b.max[hg.axis] - hg.depth;
+  return [body, strip];
+}
+
 /** Collision test of a set of boxes against all other visible items. */
 export function boxesFree(boxes: Box3[], ignoreIds: string[]): boolean {
   const ign = new Set(ignoreIds);
-  const others = store.visibleItems().filter(i => !ign.has(i.id)).map(itemBox);
+  const others = store.visibleItems().filter(i => !ign.has(i.id)).flatMap(i => collisionBoxes(i));
   for (const b of boxes) {
     if (b.min.z < -0.01) return false;
     for (const o of others) if (boxesOverlap(b, o)) return false;
@@ -113,12 +150,23 @@ function isReasonable(pos: Vec3, size: Record<Axis, number>, others: Item[]): bo
   return Math.hypot(c.x - cx, c.y - cy) <= Math.max(REACH_MIN, radius + REACH_MARGIN);
 }
 
+/** Default grab point: centre of the footprint — for hanging objects, of the body (the pot), not of the hanging strip. */
+function defaultGrab(item: Item, s: { w: number; d: number }): Vec3 {
+  const g = { x: s.w / 2, y: s.d / 2, z: 0 };
+  const hg = hangOf(item);
+  if (hg) {
+    const len = hg.axis === 'x' ? s.w : s.d;
+    g[hg.axis] = hg.side < 0 ? (len + hg.depth) / 2 : (len - hg.depth) / 2;
+  }
+  return g;
+}
+
 export function computePlacement(o: PlaceOpts): PlaceResult | null {
   const vp = ui.viewport;
   const { item, clientX: cx, clientY: cy } = o;
   const s = worldSize(item);
   const size: Record<Axis, number> = { x: s.w, y: s.d, z: s.h };
-  const grab = o.grab ?? { x: s.w / 2, y: s.d / 2, z: 0 };
+  const grab = o.grab ?? defaultGrab(item, s);
   const ignore = new Set(o.ignoreIds);
   const others = store.visibleItems().filter(i => !ignore.has(i.id));
   const settings = store.settings;
@@ -143,7 +191,8 @@ export function computePlacement(o: PlaceOpts): PlaceResult | null {
     const hb = itemBox(hitItem);
     if (hit.normal.z > 0.5) {
       surface = 'top';
-      pos.z = hb.max.z;
+      // hanging objects rest their pot base on the surface, the stems fall below it
+      pos.z = hb.max.z - (hangOf(item)?.hang ?? 0);
       const p = vp.rayToPlane(cx, cy, { x: 0, y: 0, z: 1 }, hb.max.z + grab.z) ?? hit.point;
       pos.x = p.x - grab.x; pos.y = p.y - grab.y;
       guides.push({ axis: 'z', kind: 'top', targetId: hitItem.id, value: hb.max.z });
@@ -201,6 +250,7 @@ export function computePlacement(o: PlaceOpts): PlaceResult | null {
   if (settings.snapItems && others.length) {
     const thr = snapThreshold({ x: raw.x + grab.x, y: raw.y + grab.y, z: raw.z + grab.z });
     const boxes = others.map(it => ({ id: it.id, b: itemBox(it) }));
+    const hg = hangOf(item);
     for (const a of AXES) {
       if (locked[a]) continue;
       const gMin = raw[a], gMax = raw[a] + size[a];
@@ -220,6 +270,11 @@ export function computePlacement(o: PlaceOpts): PlaceResult | null {
           [b.min[a] - gMin, 'align', b.min[a]],
           [b.max[a] - gMax, 'align', b.max[a]],
         ];
+        // hanging objects: the pot front (strip boundary) aligns with the shelf edge, instead
+        // of the box front (which would put the hanging stems inside the shelf)
+        if (hg && hg.axis === a) cands[hg.side < 0 ? 2 : 3] = hg.side < 0
+          ? [b.min[a] - (gMin + hg.depth), 'align', b.min[a]]
+          : [b.max[a] - (gMax - hg.depth), 'align', b.max[a]];
         for (const [d, kind, value] of cands) {
           if (Math.abs(d) < thr && (!best || Math.abs(d) < Math.abs(best.d) - 1e-6)) best = { d, kind, id, value };
         }
@@ -235,7 +290,7 @@ export function computePlacement(o: PlaceOpts): PlaceResult | null {
   for (const a of AXES) pos[a] = Math.round(pos[a] * 1000) / 1000;
   if (pos.z < 0 && pos.z > -0.01) pos.z = 0;
 
-  const valid = boxesFree([boxAt(item, pos)], o.ignoreIds);
+  const valid = boxesFree(collisionBoxes(item, pos), o.ignoreIds);
   return {
     position: pos, valid, surface, guides,
     label: describeGuides(guides, surface, hitItem?.id ?? null),
@@ -248,7 +303,7 @@ export function freeSpot(item: Item): Vec3 {
   const u = unionBox(vis);
   if (!u) return { x: 0, y: 0, z: 0 };
   let p: Vec3 = { x: u.max.x, y: u.min.y, z: 0 };
-  for (let i = 0; i < 40 && !boxesFree([boxAt(item, p)], []); i++) p = { ...p, x: p.x + 5 };
+  for (let i = 0; i < 40 && !boxesFree(collisionBoxes(item, p), []); i++) p = { ...p, x: p.x + 5 };
   return p;
 }
 

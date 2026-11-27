@@ -28,6 +28,20 @@ export interface ObjectVariant {
   colors?: ObjectColor[];
   /** Product link (IKEA page…). */
   url?: string;
+  /** i18n key of the full default item name, when "type + variant" reads badly ("Lampadaire arc"). */
+  nameKey?: string;
+  /** i18n key of a short note shown under the size (e.g. "réglable 63–127 cm"). */
+  noteKey?: string;
+  /** Library / inspector glyph for this variant (else the type icon). */
+  icon?: string;
+  /**
+   * Hanging part (cm) below the object's resting plane, on its FRONT side
+   * (local −Y): trailing plants put on a shelf. The item box includes it;
+   * drops put the resting plane (pot base) on the surface and only the front
+   * strip `hangDepth` deep may go below it (see interaction/placement.ts).
+   */
+  hang?: number;
+  hangDepth?: number;
 }
 
 export interface ObjectDef {
@@ -50,8 +64,12 @@ export interface ObjectDef {
   cutsWalls?: boolean;
 }
 
-/** Bed: mattress + base slab 20 cm thick. */
-const BED = (w: number, d: number): Size3 => ({ w, d, h: 20 });
+/** Bed: base + mattress slab 20 cm thick, pillows (12 cm) on top → item box 32 cm high. */
+export const BED_SLAB = 20;
+export const BED_PILLOW = 12;
+const BED = (w: number, d: number): Size3 => ({ w, d, h: BED_SLAB + BED_PILLOW });
+const LAMP_TABLE = 'obj.lamp.gTable', LAMP_FLOOR = 'obj.lamp.gFloor';
+const PLANT_CLASSIC = 'obj.plant.gClassic', PLANT_BUSHY = 'obj.plant.gBushy', PLANT_TRAIL = 'obj.plant.gTrailing';
 
 export const OBJECT_DEFS: ObjectDef[] = [
   // ── Blocks ──
@@ -76,20 +94,44 @@ export const OBJECT_DEFS: ObjectDef[] = [
     ],
   },
   {
+    // Table lamps (28 / 50 cm) and floor lamps. Floor-lamp sizes follow common
+    // models: ÅRSTID 155 cm (shade Ø36, base Ø28), tripod ~150, arc ~190 with
+    // ~1 m reach, slim reading lamp ~140.
     shape: 'lamp', group: 'objects', labelKey: 'obj.lamp', icon: 'lamp', size: { w: 18, d: 18, h: 28 }, editable: [],
     defaultVariant: 'h28',
     variants: [
-      { id: 'h28', labelKey: 'obj.lamp.h28', size: { w: 18, d: 18, h: 28 } },
-      { id: 'h50', labelKey: 'obj.lamp.h50', size: { w: 30, d: 30, h: 50 } },
+      { id: 'h28', groupKey: LAMP_TABLE, labelKey: 'obj.lamp.h28', size: { w: 18, d: 18, h: 28 } },
+      { id: 'h50', groupKey: LAMP_TABLE, labelKey: 'obj.lamp.h50', size: { w: 30, d: 30, h: 50 } },
+      {
+        id: 'floor', groupKey: LAMP_FLOOR, labelKey: 'obj.lamp.floor', nameKey: 'obj.lamp.floor.name', icon: 'floorLamp',
+        size: { w: 36, d: 36, h: 155 }, url: 'https://www.ikea.com/fr/fr/p/-00321317/',
+      },
+      { id: 'tripod', groupKey: LAMP_FLOOR, labelKey: 'obj.lamp.tripod', nameKey: 'obj.lamp.tripod.name', icon: 'floorLamp', size: { w: 58, d: 58, h: 150 } },
+      { id: 'arc', groupKey: LAMP_FLOOR, labelKey: 'obj.lamp.arc', nameKey: 'obj.lamp.arc.name', noteKey: 'obj.lamp.arc.note', icon: 'arcLamp', size: { w: 40, d: 130, h: 190 } },
+      { id: 'reading', groupKey: LAMP_FLOOR, labelKey: 'obj.lamp.reading', nameKey: 'obj.lamp.reading.name', icon: 'floorLamp', size: { w: 26, d: 40, h: 140 } },
     ],
   },
   {
+    // Classic potted plant, bushy plant (dense, wider) and trailing plant
+    // (pothos-like, for a shelf: the stems hang over the FRONT of the pot,
+    // below its base — see ObjectVariant.hang).
     shape: 'plant', group: 'objects', labelKey: 'obj.plant', icon: 'plant', size: { w: 30, d: 30, h: 50 }, editable: [],
     defaultVariant: 'h50',
     variants: [
-      { id: 'h35', labelKey: 'obj.plant.h35', size: { w: 24, d: 24, h: 35 } },
-      { id: 'h50', labelKey: 'obj.plant.h50', size: { w: 32, d: 32, h: 50 } },
-      { id: 'h75', labelKey: 'obj.plant.h75', size: { w: 44, d: 44, h: 75 } },
+      { id: 'h35', groupKey: PLANT_CLASSIC, labelKey: 'obj.plant.h35', size: { w: 24, d: 24, h: 35 } },
+      { id: 'h50', groupKey: PLANT_CLASSIC, labelKey: 'obj.plant.h50', size: { w: 32, d: 32, h: 50 } },
+      { id: 'h75', groupKey: PLANT_CLASSIC, labelKey: 'obj.plant.h75', size: { w: 44, d: 44, h: 75 } },
+      { id: 'b40', groupKey: PLANT_BUSHY, labelKey: 'obj.plant.b40', nameKey: 'obj.plant.b40.name', size: { w: 42, d: 42, h: 40 } },
+      { id: 'b60', groupKey: PLANT_BUSHY, labelKey: 'obj.plant.b60', nameKey: 'obj.plant.b60.name', size: { w: 58, d: 58, h: 60 } },
+      { id: 'b90', groupKey: PLANT_BUSHY, labelKey: 'obj.plant.b90', nameKey: 'obj.plant.b90.name', size: { w: 78, d: 78, h: 90 } },
+      {
+        id: 't40', groupKey: PLANT_TRAIL, labelKey: 'obj.plant.t40', nameKey: 'obj.plant.t40.name', noteKey: 'obj.plant.t40.note', icon: 'plantTrailing',
+        size: { w: 30, d: 23, h: 52 }, hang: 30, hangDepth: 7,
+      },
+      {
+        id: 't70', groupKey: PLANT_TRAIL, labelKey: 'obj.plant.t70', nameKey: 'obj.plant.t70.name', noteKey: 'obj.plant.t70.note', icon: 'plantTrailing',
+        size: { w: 38, d: 29, h: 84 }, hang: 55, hangDepth: 8,
+      },
     ],
   },
 ];

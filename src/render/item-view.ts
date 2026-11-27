@@ -16,6 +16,8 @@ import { MaterialLibrary, RO, faceSetOf, type VisualState } from './materials';
 import { itemBox, localSize, worldSize } from '../core/kallax';
 import { effectiveFinish } from '../core/finishes';
 import { store } from '../core/store';
+import { colorOf, type ObjectColor } from '../core/objects';
+import { SIL_KEY, type SilhouetteEdges } from './furniture-chairs';
 import type { Item } from '../core/types';
 
 export class ItemView {
@@ -115,10 +117,16 @@ export class ItemView {
   }
 
   /**
-   * Silhouette generators of the revolved parts: on each frustum (cylinder or
-   * cone) the two lines where the surface turns away from the viewer.
+   * View-dependent contour lines:
+   * - revolved parts (frusta: cylinders / cones): on each frustum the two
+   *   generators where the surface turns away from the viewer;
+   * - smooth meshes (moulded shells, cushions: `face.userData[SIL_KEY]`): the
+   *   candidate edges whose two adjacent faces lie on either side of the view
+   *   direction (one front-facing, one back-facing).
    * `projDir` = world projection direction (towards the scene) for parallel
-   * projections; `camPos` for perspective (direction to each part's centre).
+   * projections; `camPos` for perspective (direction to each part / edge).
+   * Everything is computed in the item's content space and only when the view
+   * (seen from the item) changed.
    *
    * Frustum a → b (axis u, length L), radii ra → rb, Δr = rb − ra. The surface
    * normal at radial direction e is ∝ L·e − Δr·u, so the contour satisfies
@@ -129,15 +137,18 @@ export class ItemView {
    */
   updateSilhouette(projDir: THREE.Vector3, camPos: THREE.Vector3 | null) {
     const parts = this.geo.frusta;
-    if (!parts?.length) { this.sil.visible = false; return; }
-    const inv = this.group.quaternion.clone().invert();
+    const mesh = this.geo.face.userData[SIL_KEY] as SilhouetteEdges | undefined;
+    if (!parts?.length && !mesh) { this.sil.visible = false; return; }
+    // view as seen from the item (content space)
+    const camL = camPos ? this.content.worldToLocal(camPos.clone()) : null;
+    const dirL = camPos ? null : projDir.clone().applyQuaternion(this.group.quaternion.clone().invert()).normalize();
+    const key = (camL ? `p${camL.x.toFixed(1)},${camL.y.toFixed(1)},${camL.z.toFixed(1)}` : `o${dirL!.x.toFixed(4)},${dirL!.y.toFixed(4)},${dirL!.z.toFixed(4)}`) + '|' + this.geo.key;
+    if (key === this.silKey) return;
+    this.silKey = key;
     const pos: number[] = [];
     const u = new THREE.Vector3(), v = new THREE.Vector3(), pp = new THREE.Vector3(), q = new THREE.Vector3(), e = new THREE.Vector3();
-    for (const f of parts) {
-      if (camPos) {
-        const centreW = this.content.localToWorld(f.a.clone().lerp(f.b, 0.5));
-        v.copy(centreW).sub(camPos).applyQuaternion(inv);
-      } else v.copy(projDir).applyQuaternion(inv);
+    for (const f of parts ?? []) {
+      if (camL) v.copy(f.a).lerp(f.b, 0.5).sub(camL); else v.copy(dirL!);
       v.normalize();
       u.copy(f.b).sub(f.a);
       const L = u.length();
@@ -157,11 +168,32 @@ export class ItemView {
         pos.push(f.a.x + e.x * f.ra, f.a.y + e.y * f.ra, f.a.z + e.z * f.ra, f.b.x + e.x * f.rb, f.b.y + e.y * f.rb, f.b.z + e.z * f.rb);
       }
     }
+    if (mesh?.tri.length) {
+      // smooth contour: zero crossings of the interpolated n·v on each triangle
+      const T = mesh.tri, N = mesh.nrm;
+      const g = [0, 0, 0];
+      let vx = dirL?.x ?? 0, vy = dirL?.y ?? 0, vz = dirL?.z ?? 0;
+      for (let t = 0, n = T.length / 9; t < n; t++) {
+        const o = t * 9;
+        let neg = 0;
+        for (let k = 0; k < 3; k++) {
+          const q = o + k * 3;
+          if (camL) { vx = T[q] - camL.x; vy = T[q + 1] - camL.y; vz = T[q + 2] - camL.z; }
+          g[k] = N[q] * vx + N[q + 1] * vy + N[q + 2] * vz;
+          if (g[k] < 0) neg++;
+        }
+        if (neg === 0 || neg === 3) continue;
+        for (let k = 0; k < 3; k++) {
+          const a = k, b = (k + 1) % 3;
+          if ((g[a] < 0) === (g[b] < 0)) continue;
+          const s = g[a] / (g[a] - g[b]);
+          const qa = o + a * 3, qb = o + b * 3;
+          pos.push(T[qa] + (T[qb] - T[qa]) * s, T[qa + 1] + (T[qb + 1] - T[qa + 1]) * s, T[qa + 2] + (T[qb + 2] - T[qa + 2]) * s);
+        }
+      }
+    }
     if (!pos.length) { this.sil.visible = false; return; }
     this.sil.visible = true;
-    const key = pos.map(x => x.toFixed(2)).join(',') + '|' + this.geo.key;
-    if (key === this.silKey) return;
-    this.silKey = key;
     this.silGeo.dispose();
     this.silGeo = new LineSegmentsGeometry();
     this.silGeo.setPositions(pos);
@@ -169,14 +201,24 @@ export class ItemView {
     this.sil.geometry = this.silGeo;
   }
 
+  /** Object colour of a block item (IKEA chair colours…), when it has one. */
+  private objectColor(): ObjectColor | undefined {
+    const it = this.item;
+    return it.kind === 'block' && it.shape ? colorOf(it.shape, it.variant, it.color) : undefined;
+  }
+
   /** Finish colours wanted for this item with `lib` ('' = plain theme colours). */
   private finishKey(lib: MaterialLibrary): string {
     const set = faceSetOf(this.item);
-    if (!lib.mode.finishColors || this.item.kind !== 'kallax') return set;
+    if (!lib.mode.finishColors) return set;
+    if (this.item.kind !== 'kallax') {
+      const c = this.objectColor();
+      return c ? `${set}|o:${c.hex}|${c.hex2 ?? ''}` : set;
+    }
     return `${set}|${effectiveFinish(this.item, store.doc.finish)}|${store.doc.basket ?? 'naturel'}`;
   }
 
-  /** True when the item's finish (or the document's global finish / basket) changed since the last applyMaterials. */
+  /** True when the item's finish / colour (or the document's global finish / basket) changed since the last applyMaterials. */
   needsMaterials(lib: MaterialLibrary): boolean { return this.finishKey(lib) !== this.matKey; }
 
   /** Assign shared materials for the current state / mode. */
@@ -185,7 +227,19 @@ export class ItemView {
     const transp = lib.mode.transparency;
     this.matKey = this.finishKey(lib);
     const lines = lib.lines[state];
-    if (lib.mode.finishColors && this.item.kind === 'kallax') {
+    let silLine = lines.outer;
+    const oc = lib.mode.finishColors ? this.objectColor() : undefined;
+    if (oc) {
+      // Object colours: main parts in `hex` (geometry group 0), secondary parts
+      // (legs, frame, base…) in `hex2` (group 1); edges in the main colour's tones.
+      const main = lib.objectFinish(oc.hex);
+      const sec = oc.hex2 ? lib.objectFinish(oc.hex2) : main;
+      this.face.material = this.geo.face.groups.length > 1 ? [main.face[state], sec.face[state]] : main.face[state];
+      this.outer.material = main.lines[state].outer;
+      this.inner.material = main.lines[state].inner;
+      this.fit.material = main.lines[state].inner;
+      silLine = main.lines[state].outer;
+    } else if (lib.mode.finishColors && this.item.kind === 'kallax') {
       // Frame (+ wooden fittings) in the finish colour, BRANÄS baskets in rattan (geometry group 1).
       const fin = lib.kallaxFinish(effectiveFinish(this.item, store.doc.finish));
       const bsk = lib.basket(store.doc.basket);
@@ -201,7 +255,7 @@ export class ItemView {
     }
     this.prepass.material = lib.prepass;
     this.hidden.material = lib.hidden;
-    this.sil.material = lines.outer;
+    this.sil.material = silLine;
     this.sil.renderOrder = state !== 'normal' ? RO.line + 0.5 : RO.line;
 
     this.prepass.visible = transp;
